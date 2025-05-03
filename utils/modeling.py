@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 # ここでは関数間でモデルオブジェクトを渡すシンプルな方法を採用。
 
 # @st.cache_resource # 一時的にキャッシュを無効化
-def setup_and_compare_models(_data, target, numeric_features, categorical_features, include_models, sort_metric='RMSE', fold=5):
+def setup_and_compare_models(_data, target, numeric_features, categorical_features, ignore_features, include_models, sort_metric='RMSE', fold=5):
     """PyCaretのセットアップとモデル比較を実行し、最良モデル、結果、セットアップオブジェクトを返す"""
     st.info("PyCaretのセットアップを開始します...")
     setup_result = None # 初期化
@@ -18,6 +18,7 @@ def setup_and_compare_models(_data, target, numeric_features, categorical_featur
         setup_result = setup(data=_data, target=target,
                        numeric_features=numeric_features if numeric_features else None,
                        categorical_features=categorical_features if categorical_features else None,
+                       ignore_features=ignore_features if ignore_features else None,
                        session_id=123, # 再現性のため
                        verbose=False, # Streamlit上では詳細ログを抑制
                        html=False)
@@ -116,7 +117,7 @@ def get_feature_importance_df(model, setup_result):
         if hasattr(model, 'steps'):
             final_estimator = model.steps[-1][1]
         else:
-            st.warning("モデルがPipelineではないようです。そのままモデルを使用します。")
+            st.warning("モデルがPipelineではないようです。そのままモデルを使用します。") # この警告は出る可能性がある
             final_estimator = model
 
         # --- 重要度を取得 --- #
@@ -138,6 +139,7 @@ def get_feature_importance_df(model, setup_result):
 
         try:
             # 試行1: setup_result.pipeline から get_feature_names_out (推奨)
+            # 注意: modelではなく、setup_result.pipeline を使う！
             if hasattr(setup_result, 'pipeline') and hasattr(setup_result.pipeline[:-1], 'get_feature_names_out'):
                  try:
                      # モデルステップを除いたパイプラインから名前を取得

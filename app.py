@@ -107,9 +107,14 @@ with st.sidebar:
                 category_cols = data_for_date_selection[potential_features].select_dtypes(exclude=['number']).columns.tolist()
                 st.write("予測に使用する特徴量:")
                 selected_numeric = st.multiselect("数値特徴量:", numeric_cols, default=numeric_cols)
-                # カテゴリ特徴量のデフォルト選択を変更
-                default_category = ['ja_name'] if 'ja_name' in category_cols else [] # ja_nameがあればそれを、なければ空をデフォルトに
-                selected_categorical = st.multiselect("カテゴリ特徴量:", category_cols, default=default_category)
+                # カテゴリ特徴量のデフォルト選択を変更 (車両クラスも追加)
+                default_categories = []
+                if 'ja_name' in category_cols:
+                    default_categories.append('ja_name')
+                if '車両クラス' in category_cols:
+                    default_categories.append('車両クラス')
+                # もし両方ない場合は空リスト
+                selected_categorical = st.multiselect("カテゴリ特徴量:", category_cols, default=default_categories)
                 selected_features = selected_numeric + selected_categorical
 
                 # 評価モデル選択
@@ -176,12 +181,21 @@ else:
                         with st.expander("モデル学習に使用したデータのサンプルを表示"): 
                              st.dataframe(data_for_modeling.head())
 
-                        # 1. モデル比較
+                        # 1. モデル比較 (ignore_features から 車両クラス を削除)
+                        # ignore_cols_for_xgb = ['曜日_name', 'en_name'] # 車両クラスを削除
+                        # エラー原因が XGBoost のカテゴリ型処理に限定されるか不明なため、一旦 ignore_features を使わない方向で試す
+                        ignore_cols = ['曜日_name', 'en_name'] # 以前エラーが出た列のみ無視（車両クラスは無視しない）
+
+                        # 利用可能な特徴量リストからignore対象を除く
+                        valid_numeric = [col for col in selected_numeric if col not in ignore_cols]
+                        valid_categorical = [col for col in selected_categorical if col not in ignore_cols]
+
                         best_model, comparison_results, setup_result = setup_and_compare_models(
                             _data=data_for_modeling,
                             target=TARGET_VARIABLE,
-                            numeric_features=selected_numeric,
-                            categorical_features=selected_categorical,
+                            numeric_features=valid_numeric,
+                            categorical_features=valid_categorical,
+                            ignore_features=ignore_cols,  # 修正: 車両クラスを含まないリスト
                             include_models=models_to_compare,
                             sort_metric='RMSE'
                         )

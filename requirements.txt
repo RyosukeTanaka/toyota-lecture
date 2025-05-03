@@ -3,4 +3,5 @@ pandas
 pycaret[full]
 plotly
 tabulate
-xgboost 
+xgboost
+PyYAML 

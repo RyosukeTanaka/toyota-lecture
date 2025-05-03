@@ -1,0 +1,21 @@
+# config.yaml: アプリケーションの設定ファイル
+
+model_config:
+  # デフォルトで選択する数値特徴量
+  # リストで指定します。
+  # null または省略した場合、利用可能な全ての数値特徴量がデフォルトになります。
+  default_numeric_features: null
+  # default_numeric_features:
+  #   - リードタイム_計算済
+  #   - 出発日_価格
+
+  # デフォルトで選択するカテゴリ特徴量
+  # リストで指定します。
+  default_categorical_features:
+    - ja_name
+    - 車両クラス
+
+  # デフォルトで評価するモデル (オプション)
+  default_models_to_compare:
+    - xgboost
+    - lightgbm 
