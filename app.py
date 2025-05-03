@@ -107,7 +107,9 @@ with st.sidebar:
                 category_cols = data_for_date_selection[potential_features].select_dtypes(exclude=['number']).columns.tolist()
                 st.write("予測に使用する特徴量:")
                 selected_numeric = st.multiselect("数値特徴量:", numeric_cols, default=numeric_cols)
-                selected_categorical = st.multiselect("カテゴリ特徴量:", category_cols, default=category_cols)
+                # カテゴリ特徴量のデフォルト選択を変更
+                default_category = ['ja_name'] if 'ja_name' in category_cols else [] # ja_nameがあればそれを、なければ空をデフォルトに
+                selected_categorical = st.multiselect("カテゴリ特徴量:", category_cols, default=default_category)
                 selected_features = selected_numeric + selected_categorical
 
                 # 評価モデル選択

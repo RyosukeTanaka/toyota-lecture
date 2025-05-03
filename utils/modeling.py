@@ -102,7 +102,9 @@ def get_feature_importance_plot(model):
 
 # 特徴量重要度をDataFrameで取得する関数 (引数を変更)
 def get_feature_importance_df(model, setup_result):
-    """訓練済みモデルとPyCaretのセットアップ結果から特徴量重要度を抽出し、DataFrameで返す"""
+    """訓練済みモデル(最終推定器)とPyCaretのセットアップ結果から特徴量重要度を抽出し、DataFrameで返す"""
+    # modelは最終推定器(e.g., XGBRegressor)である可能性が高いと想定
+    # setup_resultは setup() の戻り値 (RegressionExperiment)
     if model is None or setup_result is None:
         st.warning("重要度抽出: モデルまたはセットアップ結果がありません。")
         return None
@@ -121,46 +123,63 @@ def get_feature_importance_df(model, setup_result):
         if hasattr(final_estimator, 'feature_importances_'):
             importances = final_estimator.feature_importances_
         else:
-            st.error(f"モデル ({type(final_estimator).__name__}) から feature_importances_ 属性が見つかりません。")
-            return None
+            # Pipelineだった場合も考慮して最終ステップを確認 (念のため)
+            if hasattr(model, 'steps') and hasattr(model.steps[-1][1], 'feature_importances_'):
+                 final_estimator = model.steps[-1][1]
+                 importances = final_estimator.feature_importances_
+                 st.info("モデルはPipelineでしたが、最終推定器から重要度を取得しました。")
+            else:
+                 st.error(f"モデル ({type(model).__name__}) から feature_importances_ 属性が見つかりません。")
+                 return None
 
         # --- 前処理後の特徴量名を取得 (修正箇所) --- #
         feature_names = None
-        try:
-            # 優先度1: setup_resultオブジェクトの get_config メソッドを使用 (PyCaret 3.x 推奨)
-            if hasattr(setup_result, 'get_config'):
-                # 'X_transformed' や 'pipeline' から特徴量名を取得できないか試す
-                # setup_result.get_config('X_transformed') はデータそのもの
-                # setup_result.pipeline でパイプラインを取得
-                pipeline_ = setup_result.pipeline
-                if hasattr(pipeline_, 'get_feature_names_out'):
-                    # モデルを除いたパイプラインで名前取得
-                    if hasattr(model, 'steps'):
-                        feature_names = list(model[:-1].get_feature_names_out())
-                    else:
-                         # モデルがパイプラインでない場合、前処理がないと仮定？
-                         # または setup_result.pipeline 全体で取得？
-                         # feature_names = list(pipeline_.get_feature_names_out())
-                         st.warning("モデルがPipelineでないため、特徴量名の取得方法が不明です。")
-                         pass # feature_names は None のまま
-                # get_config に直接特徴量リストがある場合も？ (例: 'feature_names_transformed')
-                elif setup_result.get_config('feature_names_transformed') is not None:
-                    feature_names = setup_result.get_config('feature_names_transformed')
-                    st.info("get_config('feature_names_transformed') から特徴量名を取得しました。")
-                elif setup_result.get_config('X_train_transformed') is not None:
-                     # fallback: 変換後の訓練データのカラム名を使う
-                     feature_names = setup_result.get_config('X_train_transformed').columns.tolist()
-                     st.info("get_config('X_train_transformed').columns から特徴量名を取得しました。")
+        err_msg = [] # エラー収集用
 
-            # 優先度2: setup_resultオブジェクトの属性を直接参照 (旧バージョンなど)
-            elif hasattr(setup_result, 'feature_names_transformed'):
-                feature_names = setup_result.feature_names_transformed
-                st.info("setup_result.feature_names_transformed 属性から特徴量名を取得しました。")
-            elif hasattr(setup_result, 'X_train_transformed'):
-                 feature_names = setup_result.X_train_transformed.columns.tolist()
-                 st.info("setup_result.X_train_transformed.columns 属性から特徴量名を取得しました。")
-            else:
-                 st.warning("setup_result から特徴量名を取得する既知の方法が見つかりませんでした。")
+        try:
+            # 試行1: setup_result.pipeline から get_feature_names_out (推奨)
+            if hasattr(setup_result, 'pipeline') and hasattr(setup_result.pipeline[:-1], 'get_feature_names_out'):
+                 try:
+                     # モデルステップを除いたパイプラインから名前を取得
+                     feature_names = list(setup_result.pipeline[:-1].get_feature_names_out())
+                     st.info("setup_result.pipeline[:-1].get_feature_names_out() から特徴量名を取得。")
+                 except Exception as e1:
+                     err_msg.append(f"pipeline.get_feature_names_out エラー: {e1}")
+
+            # 試行2: get_config を使用
+            if feature_names is None and hasattr(setup_result, 'get_config'):
+                try:
+                    # 直接的な属性がないか確認
+                    names_transformed = setup_result.get_config('feature_names_transformed')
+                    if names_transformed is not None:
+                         feature_names = names_transformed
+                         st.info("get_config('feature_names_transformed') から特徴量名を取得。")
+                    else:
+                         # X_transformedのカラム名を使用
+                         X_transformed_df = setup_result.get_config('X_train_transformed') # または 'X_transformed'
+                         if X_transformed_df is not None and hasattr(X_transformed_df, 'columns'):
+                             feature_names = X_transformed_df.columns.tolist()
+                             st.info("get_config('X_train_transformed').columns から特徴量名を取得。")
+                         else:
+                              err_msg.append("get_config から特徴量名が見つかりません。")
+                except Exception as e2:
+                     err_msg.append(f"get_configエラー: {e2}")
+
+            # 試行3: 古い属性を直接参照
+            if feature_names is None and hasattr(setup_result, 'feature_names_transformed'):
+                 try:
+                     feature_names = setup_result.feature_names_transformed
+                     st.info("setup_result.feature_names_transformed 属性から特徴量名を取得。")
+                 except Exception as e3:
+                      err_msg.append(f"feature_names_transformed属性エラー: {e3}")
+
+            if feature_names is None and hasattr(setup_result, 'X_train_transformed'):
+                 try:
+                     feature_names = setup_result.X_train_transformed.columns.tolist()
+                     st.info("setup_result.X_train_transformed.columns 属性から特徴量名を取得。")
+                 except Exception as e4:
+                     err_msg.append(f"X_train_transformed.columns属性エラー: {e4}")
+
 
             # --- 長さチェックと調整 --- #
             if feature_names is not None:
@@ -168,11 +187,14 @@ def get_feature_importance_df(model, setup_result):
                     st.success("特徴量名と重要度の数が一致しました。")
                 else:
                     st.warning(f"取得した特徴量名の数 ({len(feature_names)}) と重要度の数 ({len(importances)}) が不一致です。インデックス名にフォールバックします。")
-                    st.warning(f"取得された特徴量名サンプル: {feature_names[:5]}...") # デバッグ用
+                    st.warning(f"取得された特徴量名サンプル: {feature_names[:15]}...") # サンプル数を増やす
                     feature_names = None # 不一致の場合はNoneに戻す
+            else:
+                 st.warning(f"特徴量名の取得に失敗しました。試行時のエラー: {err_msg}")
 
-        except Exception as e_feat:
-            st.error(f"特徴量名の取得中に予期せぬエラーが発生しました: {e_feat}")
+
+        except Exception as e_feat_outer:
+            st.error(f"特徴量名の取得処理全体でエラー: {e_feat_outer}")
             traceback.print_exc()
             feature_names = None
         # ------------------------------------
