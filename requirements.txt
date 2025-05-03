@@ -1,2 +1,4 @@
 streamlit
-pandas 
+pandas
+pycaret[full]
+tabulate 
