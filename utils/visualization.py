@@ -75,4 +75,35 @@ def plot_comparison_curve(df_actual, df_predicted, x_col, y_actual_col, y_pred_c
         return fig
     except Exception as e:
         st.error(f"比較グラフの描画中にエラーが発生しました: {e}")
-        return go.Figure() 
+        return go.Figure()
+
+def plot_feature_importance(df_importance):
+    """特徴量重要度のDataFrameからPlotly棒グラフを作成する"""
+    if df_importance is None or df_importance.empty:
+        st.warning("特徴量重要度データが空のため、グラフを作成できません。")
+        return None
+    try:
+        # 上位N件などに絞る場合はここでフィルタリング
+        # df_importance = df_importance.head(20)
+
+        fig = px.bar(
+            df_importance,
+            x='Importance',
+            y='Feature',
+            orientation='h', # 横棒グラフ
+            title='Feature Importance',
+            # text='Importance' # バーに値を表示する場合
+        )
+        # 見やすいように並び順を逆転 (縦軸の上から重要度高)
+        fig.update_layout(
+            yaxis={'categoryorder':'total ascending'},
+            xaxis_title="Importance",
+            yaxis_title="Feature",
+            height=max(400, len(df_importance) * 25) # 特徴量数に応じて高さを調整
+        )
+        # バーの値のフォーマット調整 (必要に応じて)
+        # fig.update_traces(texttemplate='%{text:.3f}', textposition='outside')
+        return fig
+    except Exception as e:
+        st.error(f"特徴量重要度グラフの作成中にエラー: {e}")
+        return None 

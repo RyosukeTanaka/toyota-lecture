@@ -2,4 +2,5 @@ streamlit
 pandas
 pycaret[full]
 plotly
-tabulate 
+tabulate
+xgboost 
