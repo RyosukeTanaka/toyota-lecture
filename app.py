@@ -315,7 +315,30 @@ else:
                                 # --- 予測データサンプル表示 --- #
                                 if not data_scenario.empty:
                                     with st.expander(f"予測に使用したデータ ({scenario_title_suffix}) のサンプルを表示"):
-                                         st.dataframe(data_scenario.head())
+                                        # 表示する列を選択された特徴量+必須列に限定
+                                        display_columns = selected_features.copy()
+                                        # リードタイム列、目的変数、価格列は必ず表示
+                                        essential_columns = [LEAD_TIME_COLUMN, TARGET_VARIABLE] + PRICE_COLUMNS
+                                        for col in essential_columns:
+                                            if col in data_scenario.columns and col not in display_columns:
+                                                display_columns.append(col)
+                                        # 存在する列だけを抽出
+                                        existing_display_columns = [col for col in display_columns if col in data_scenario.columns]
+                                        if existing_display_columns:
+                                            st.dataframe(data_scenario[existing_display_columns].head())
+                                            
+                                            # データダウンロード機能を追加
+                                            download_data = data_scenario[existing_display_columns].copy()
+                                            csv = download_data.to_csv(index=False)
+                                            filename = f"scenario_data_{selected_date}_{selected_car_class}_{scenario_title_suffix.replace(' ', '_')}.csv"
+                                            st.download_button(
+                                                label="📊 予測用データをダウンロード (.csv)",
+                                                data=csv,
+                                                file_name=filename,
+                                                mime="text/csv",
+                                            )
+                                        else:
+                                            st.warning("表示する列が見つかりません。特徴量を選択してください。")
                                 # -------------------------
 
                                 # 3. 予測実行
