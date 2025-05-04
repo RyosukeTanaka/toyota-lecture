@@ -236,9 +236,16 @@ else:
                         # --- 学習データ準備 ---
                         data_for_modeling = data[data[CAR_CLASS_COLUMN] == selected_car_class] if selected_car_class != "全クラス" else data
 
-                        # --- 学習データサンプル表示 --- #
-                        with st.expander("モデル学習に使用したデータのサンプルを表示"): 
-                             st.dataframe(data_for_modeling.head())
+                        # --- 学習データサンプル表示 (修正) --- #
+                        with st.expander("モデル学習に使用したデータのサンプルを表示 (選択された特徴量 + 目的変数)"):
+                            # UIで選択された特徴量 + 目的変数 だけを抽出して表示
+                            columns_to_show = selected_features + [TARGET_VARIABLE]
+                            # data_for_modeling にこれらの列が存在するか確認してから表示
+                            existing_columns_to_show = [col for col in columns_to_show if col in data_for_modeling.columns]
+                            if existing_columns_to_show:
+                                st.dataframe(data_for_modeling[existing_columns_to_show].head())
+                            else:
+                                st.warning("表示する列が見つかりません。特徴量を選択してください。")
 
                         # 1. モデル比較 (無視リストの生成ロジックを追加)
                         # 全ての利用可能な数値・カテゴリ特徴量を取得
