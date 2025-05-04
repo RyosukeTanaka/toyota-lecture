@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import yaml # 追加
 # PyCaretのインポートは modeling.py に移動するため、ここでは不要になる可能性があります
 # from pycaret.regression import setup, compare_models, pull, save_model
 
@@ -26,9 +27,32 @@ PRICE_COLUMNS = ['価格_トヨタ', '価格_オリックス'] # 価格比較対
 LEAD_TIME_COLUMN = 'リードタイム_計算済' # 前処理で計算したリードタイム列
 CAR_CLASS_COLUMN = '車両クラス' # 車両クラス列を追加
 
+# --- 設定ファイルを読み込む関数 --- #
+# @st.cache_data # 設定ファイルの内容はキャッシュする -> 一時的に無効化
+def load_config(config_path='config.yaml'):
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        st.success(f"設定ファイル '{config_path}' を読み込みました。")
+        return config.get('model_config', {}) # model_config セクションを取得, なければ空辞書
+    except FileNotFoundError:
+        st.warning(f"設定ファイル '{config_path}' が見つかりません。デフォルト値を使用します。")
+        return {}
+    except Exception as e:
+        st.error(f"設定ファイル '{config_path}' の読み込み中にエラーが発生しました: {e}")
+        return {}
+# ---------------------------- #
+
 # --- Streamlit アプリケーション --- #
 st.set_page_config(layout="wide") # ページレイアウトをワイドに設定
 st.title("利用台数予測と比較分析システム")
+
+# --- 設定読み込み --- #
+config = load_config()
+default_numeric_features_from_config = config.get('default_numeric_features')
+default_categorical_features_from_config = config.get('default_categorical_features', []) # デフォルトは空リスト
+default_models_to_compare_from_config = config.get('default_models_to_compare') # モデルリストも取得
+# ----------------- #
 
 # --- サイドバー --- #
 with st.sidebar:
@@ -97,7 +121,7 @@ with st.sidebar:
                 st.warning(f"'{DATE_COLUMN}'列がないか日付型ではありません。")
                 selected_date = None
 
-            # --- モデル設定 (日付選択後) ---
+            # --- モデル設定 (日付選択後) --- #
             if selected_date is not None:
                 st.markdown("---")
                 st.subheader("予測モデル設定")
@@ -106,24 +130,59 @@ with st.sidebar:
                 numeric_cols = data_for_date_selection[potential_features].select_dtypes(include=['number']).columns.tolist()
                 category_cols = data_for_date_selection[potential_features].select_dtypes(exclude=['number']).columns.tolist()
                 st.write("予測に使用する特徴量:")
-                selected_numeric = st.multiselect("数値特徴量:", numeric_cols, default=numeric_cols)
-                # カテゴリ特徴量のデフォルト選択を変更 (車両クラスも追加)
-                default_categories = []
-                if 'ja_name' in category_cols:
-                    default_categories.append('ja_name')
-                if '車両クラス' in category_cols:
-                    default_categories.append('車両クラス')
-                # もし両方ない場合は空リスト
-                selected_categorical = st.multiselect("カテゴリ特徴量:", category_cols, default=default_categories)
+
+                # --- 数値特徴量のデフォルト設定 --- #
+                # configから読み込んだ値を取得 (キーが存在しない場合はNone)
+                numeric_defaults_config = config.get('default_numeric_features')
+
+                if numeric_defaults_config is None:
+                    # configでnullまたはキー未定義の場合、利用可能な全てをデフォルトに
+                    valid_default_numeric = numeric_cols
+                    st.info("数値特徴量: config未指定のため全てデフォルト選択") # Debug
+                elif isinstance(numeric_defaults_config, list):
+                    # configでリスト指定の場合、利用可能なものだけをデフォルトに
+                    valid_default_numeric = [f for f in numeric_defaults_config if f in numeric_cols]
+                    if not valid_default_numeric and numeric_defaults_config: # configに指定はあるが有効なものがない場合
+                         st.warning(f"config.yamlの数値特徴量 {numeric_defaults_config} は現在のデータに存在しません。")
+                else:
+                    # 想定外の型の場合 (エラーメッセージを出すなど)
+                    st.error(f"config.yamlのdefault_numeric_featuresの値が無効です: {numeric_defaults_config}")
+                    valid_default_numeric = numeric_cols # フォールバックとして全て選択
+
+                # デバッグ用に渡すデフォルト値を表示
+                st.write("Debug: Default numeric features passed to multiselect:", valid_default_numeric)
+                selected_numeric = st.multiselect("数値特徴量:", numeric_cols, default=valid_default_numeric)
+                # --------------------------------- #
+
+                # --- カテゴリ特徴量のデフォルト設定 (同様にチェック強化) --- #
+                categorical_defaults_config = config.get('default_categorical_features', []) # なければ空リスト
+                if not isinstance(categorical_defaults_config, list):
+                     st.error(f"config.yamlのdefault_categorical_featuresの値が無効です: {categorical_defaults_config}")
+                     categorical_defaults_config = [] # 不正な値なら空にする
+
+                valid_default_categorical = [f for f in categorical_defaults_config if f in category_cols]
+                if not valid_default_categorical and categorical_defaults_config:
+                     st.warning(f"config.yamlのカテゴリ特徴量 {categorical_defaults_config} は現在のデータに存在しません。")
+
+                st.write("Debug: Default categorical features passed to multiselect:", valid_default_categorical) # デバッグ用
+                selected_categorical = st.multiselect("カテゴリ特徴量:", category_cols, default=valid_default_categorical)
+                # ----------------------------------- #
+
                 selected_features = selected_numeric + selected_categorical
 
-                # 評価モデル選択
+                # --- 評価モデル選択 (デフォルトをconfigから) --- #
                 available_models = ['lr', 'ridge', 'lasso', 'knn', 'dt', 'rf', 'et', 'lightgbm', 'xgboost', 'gbr', 'ada']
+                # configに指定があればそれ、なければ従来のデフォルト ['xgboost', 'lightgbm']
+                default_models = default_models_to_compare_from_config if default_models_to_compare_from_config else ['xgboost', 'lightgbm']
+                # 利用可能なモデルのみをデフォルトとする
+                valid_default_models = [m for m in default_models if m in available_models]
                 models_to_compare = st.multiselect(
                     "評価したいモデル:",
                     available_models,
-                    default=['xgboost', 'lightgbm']
+                    default=valid_default_models # 修正: config値を反映
                 )
+                # ---------------------------------------- #
+
                 # 実行ボタン
                 run_analysis = st.button("分析・予測実行")
 
@@ -181,21 +240,31 @@ else:
                         with st.expander("モデル学習に使用したデータのサンプルを表示"): 
                              st.dataframe(data_for_modeling.head())
 
-                        # 1. モデル比較 (ignore_features から 車両クラス を削除)
-                        # ignore_cols_for_xgb = ['曜日_name', 'en_name'] # 車両クラスを削除
-                        # エラー原因が XGBoost のカテゴリ型処理に限定されるか不明なため、一旦 ignore_features を使わない方向で試す
-                        ignore_cols = ['曜日_name', 'en_name'] # 以前エラーが出た列のみ無視（車両クラスは無視しない）
+                        # 1. モデル比較 (無視リストの生成ロジックを追加)
+                        # 全ての利用可能な数値・カテゴリ特徴量を取得
+                        all_numeric_cols = data_for_modeling[potential_features].select_dtypes(include=['number']).columns.tolist()
+                        all_category_cols = data_for_modeling[potential_features].select_dtypes(exclude=['number']).columns.tolist()
 
-                        # 利用可能な特徴量リストからignore対象を除く
-                        valid_numeric = [col for col in selected_numeric if col not in ignore_cols]
-                        valid_categorical = [col for col in selected_categorical if col not in ignore_cols]
+                        # UIで選択 *されなかった* 特徴量を特定
+                        ignored_numeric = list(set(all_numeric_cols) - set(selected_numeric))
+                        ignored_categorical = list(set(all_category_cols) - set(selected_categorical))
+
+                        # 以前エラーが出た列も無視リストに追加（重複はsetで解消される）
+                        explicitly_ignored = ['曜日_name', 'en_name']
+                        final_ignore_features = list(set(ignored_numeric + ignored_categorical + explicitly_ignored))
+
+                        st.info(f"無視される特徴量: {final_ignore_features}") # デバッグ用に表示
+
+                        # 利用する特徴量はUIで選択されたもののみ
+                        valid_numeric = selected_numeric
+                        valid_categorical = selected_categorical
 
                         best_model, comparison_results, setup_result = setup_and_compare_models(
                             _data=data_for_modeling,
                             target=TARGET_VARIABLE,
-                            numeric_features=valid_numeric,
-                            categorical_features=valid_categorical,
-                            ignore_features=ignore_cols,  # 修正: 車両クラスを含まないリスト
+                            numeric_features=valid_numeric,       # UIで選択されたもの
+                            categorical_features=valid_categorical, # UIで選択されたもの
+                            ignore_features=final_ignore_features,  # 修正: 選択されなかったもの+α
                             include_models=models_to_compare,
                             sort_metric='RMSE'
                         )
@@ -321,177 +390,4 @@ else:
     elif uploaded_file is not None and selected_date is None and len(available_dates)>0:
          st.info("サイドバーから分析したい利用日を選択してください。")
     elif uploaded_file is not None and len(available_dates)==0:
-         st.warning(f"アップロードされたファイルまたは選択された車両クラス '{selected_car_class}' には有効な利用日データが含まれていないようです。")
-
-# --- ここから下の古いコードは削除またはコメントアウト ---
-# st.title("利用台数予測と比較分析システム")
-
-# st.write("予測・分析対象のCSVファイルをアップロードしてください:")
-
-# uploaded_file = st.file_uploader("CSVファイルを選択", type='csv')
-
-# if uploaded_file is not None:
-#     # --- 1. データの読み込みと前処理 ---
-#     data_raw = load_data(uploaded_file)
-
-#     if data_raw is not None:
-#         data = preprocess_data(data_raw)
-
-#         st.write("処理済みデータ（最初の20行）:")
-#         st.dataframe(data.head(20))
-
-#         st.markdown("---")
-
-#         # --- 2. データ探索 (utilsに関数を移動) ---
-#         display_exploration(data)
-
-#         st.markdown("---")
-
-#         # --- 3a. 車両クラスの選択 ---
-#         st.header("分析設定")
-#         selected_car_class = "全クラス" # デフォルト
-#         if CAR_CLASS_COLUMN in data.columns:
-#             available_classes = data[CAR_CLASS_COLUMN].unique()
-#             # オプションに「全クラス」を追加
-#             class_options = ["全クラス"] + sorted(list(available_classes))
-#             selected_car_class = st.selectbox(
-#                 f"分析したい'{CAR_CLASS_COLUMN}'を選択してください:",
-#                 options=class_options,
-#                 index=0 # デフォルトで「全クラス」を選択
-#             )
-#         else:
-#             st.warning(f"警告: '{CAR_CLASS_COLUMN}'列が見つかりません。車両クラスによる絞り込みはできません。")
-
-#         # --- 3b. 分析日の選択 ---
-#         # 選択された車両クラスでデータをフィルタリング（日付選択の前に）
-#         if selected_car_class == "全クラス":
-#             data_for_date_selection = data
-#         else:
-#             data_for_date_selection = data[data[CAR_CLASS_COLUMN] == selected_car_class]
-#             st.info(f"'{selected_car_class}' クラスのデータに絞り込みました。")
-
-#         selected_date = None # 初期化
-#         if DATE_COLUMN in data_for_date_selection.columns and pd.api.types.is_datetime64_any_dtype(data_for_date_selection[DATE_COLUMN]):
-#             # 利用可能な日付は絞り込んだデータから取得
-#             available_dates = data_for_date_selection[DATE_COLUMN].dt.date.unique()
-#             if len(available_dates) > 0:
-#                 date_options_str = ['日付を選択'] + sorted([d.strftime('%Y-%m-%d') for d in available_dates])
-#                 selected_date_str = st.selectbox(
-#                     f"分析したい'{DATE_COLUMN}'を選択してください:",
-#                     options=date_options_str,
-#                     index=0 # デフォルトで「日付を選択」を選択
-#                 )
-
-#                 # 選択された文字列を日付オブジェクトまたはNoneに変換
-#                 if selected_date_str == '日付を選択':
-#                     selected_date = None
-#                 else:
-#                     try:
-#                         selected_date = pd.to_datetime(selected_date_str).date()
-#                     except ValueError:
-#                         st.error("選択された日付の形式が無効です。")
-#                         selected_date = None
-#             else:
-#                 st.warning(f"'{selected_car_class}' クラスには有効な'{DATE_COLUMN}'が見つかりません。")
-#                 selected_date = None
-
-#         else:
-#             st.warning(f"警告: '{DATE_COLUMN}'列が見つからないか、日付型ではありません。日付選択は利用できません。")
-#             selected_date = None
-
-#         # --- 4. 特定日の分析と可視化 ---
-#         if selected_date is not None:
-#             st.subheader(f"{selected_date} の分析 ({selected_car_class})") # タイトルにクラス名を追加
-#             # 選択された日付でデータをフィルタリング (車両クラスで絞り込んだデータから更に絞り込む)
-#             data_filtered = filter_data_by_date(data_for_date_selection, DATE_COLUMN, selected_date)
-
-#             if not data_filtered.empty:
-#                 # リードタイムでソート
-#                 if LEAD_TIME_COLUMN in data_filtered.columns:
-#                     data_filtered_sorted = data_filtered.sort_values(by=LEAD_TIME_COLUMN)
-
-#                     # --- 実際の予約曲線と価格推移の可視化 ---
-#                     st.write("実際の予約曲線と価格推移:")
-#                     fig_actual = plot_booking_curve(data_filtered_sorted, x_col=LEAD_TIME_COLUMN, y_col=TARGET_VARIABLE, title=f"{selected_date} {selected_car_class} 実際の予約曲線")
-#                     st.plotly_chart(fig_actual, use_container_width=True)
-#                     fig_prices = plot_price_trends(data_filtered_sorted, x_col=LEAD_TIME_COLUMN, y_cols=PRICE_COLUMNS, title=f"{selected_date} {selected_car_class} 価格推移")
-#                     st.plotly_chart(fig_prices, use_container_width=True)
-
-#                 else:
-#                     st.warning(f"警告: リードタイム列 '{LEAD_TIME_COLUMN}' が見つかりません。グラフを表示できません。")
-
-#                 # --- 5. モデル構築と予測の設定 (UI部分のみ残す) ---
-#                 st.markdown("---")
-#                 st.header("予測モデルの設定と実行")
-
-#                 # 利用可能な列を取得 (ターゲット変数、日付関連、リードタイム列を除外)
-#                 potential_features = [col for col in data.columns if col not in [TARGET_VARIABLE, DATE_COLUMN, '予約日', LEAD_TIME_COLUMN, 'リードタイム']]
-#                 # 数値とカテゴリに分ける（PyCaretの自動判別補助）
-#                 # 絞り込んだデータから特徴量候補の列を取得する
-#                 numeric_cols = data_for_date_selection[potential_features].select_dtypes(include=['number']).columns.tolist()
-#                 category_cols = data_for_date_selection[potential_features].select_dtypes(exclude=['number']).columns.tolist()
-
-#                 st.write("予測に使用する特徴量を選択してください:")
-#                 selected_numeric = st.multiselect("数値特徴量:", numeric_cols, default=numeric_cols)
-#                 selected_categorical = st.multiselect("カテゴリ特徴量:", category_cols, default=category_cols)
-#                 selected_features = selected_numeric + selected_categorical
-
-#                 available_models = ['lr', 'ridge', 'lasso', 'knn', 'dt', 'rf', 'et', 'lightgbm', 'xgboost', 'gbr', 'ada']
-#                 models_to_compare = st.multiselect(
-#                     "評価したいモデルを選択してください:",
-#                     available_models,
-#                     default=['lr', 'rf', 'lightgbm']
-#                 )
-
-#                 if st.button("モデル比較と予測実行"):
-#                     if not selected_features:
-#                         st.warning("特徴量を1つ以上選択してください。")
-#                     elif not models_to_compare:
-#                         st.warning("評価するモデルを1つ以上選択してください。")
-#                     else:
-#                          with st.spinner('モデル比較と予測を実行中...'):
-#                             # 1. モデル比較
-#                             # 車両クラスが選択されている場合は、そのクラスのデータのみでモデル比較を行う
-#                             data_for_modeling = data_for_date_selection # 車両クラスで絞り込み済みのデータ
-#                             best_model, comparison_results = setup_and_compare_models(
-#                                 _data=data_for_modeling, # 修正: 車両クラスで絞り込んだデータを使用
-#                                 target=TARGET_VARIABLE,
-#                                 numeric_features=selected_numeric,
-#                                 categorical_features=selected_categorical,
-#                                 include_models=models_to_compare,
-#                                 sort_metric='RMSE' # 例: RMSEでソート
-#                             )
-
-#                             if best_model is not None:
-#                                 # 2. シナリオデータ作成 (選択された日のデータで)
-#                                 # ここでは例として平均価格を使用するシナリオ
-#                                 data_scenario = create_scenario_data(data_filtered_sorted, PRICE_COLUMNS, scenario_type='mean')
-
-#                                 # 3. 予測実行
-#                                 predictions = predict_with_model(best_model, data_scenario)
-
-#                                 # 4. 結果表示
-#                                 st.subheader("モデル評価比較結果")
-#                                 st.dataframe(comparison_results)
-
-#                                 if not predictions.empty:
-#                                     st.subheader("予測結果との比較")
-#                                     fig_compare = plot_comparison_curve(
-#                                         df_actual=data_filtered_sorted,
-#                                         df_predicted=predictions,
-#                                         x_col=LEAD_TIME_COLUMN,
-#                                         y_actual_col=TARGET_VARIABLE,
-#                                         y_pred_col='prediction_label', # predict_modelのデフォルト出力列名
-#                                         title=f"{selected_date} {selected_car_class} 実績 vs 予測（価格変動なしシナリオ）"
-#                                     )
-#                                     st.plotly_chart(fig_compare, use_container_width=True)
-#                                 else:
-#                                     st.error("予測データの作成または予測の実行に失敗しました。")
-#                             else:
-#                                 st.error("モデル比較に失敗したため、予測を実行できませんでした。")
-#             else:
-#                 st.info(f"{selected_date} のデータが見つかりませんでした。")
-#         else:
-#             st.info("サイドバーから分析したい利用日を選択してください。")
-# else:
-#     st.info('CSVファイルをアップロードすると、データが表示され、分析と予測ができます。') 
+         st.warning(f"アップロードされたファイルまたは選択された車両クラス '{selected_car_class}' には有効な利用日データが含まれていないようです。") 
