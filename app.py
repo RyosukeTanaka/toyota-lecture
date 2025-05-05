@@ -65,7 +65,7 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: dict):
         run_analysis
     ) = render_prediction_sidebar_widgets(data, config)
 
-    # --- メインエリア --- #
+# --- メインエリア --- #
     st.subheader("処理済みデータプレビュー (現在の状態)")
     st.dataframe(data.head())
     # データ探索は別ページ
@@ -106,12 +106,18 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: dict):
                         data_for_modeling = data[data[CAR_CLASS_COLUMN] == selected_car_class] if selected_car_class != "全クラス" else data
 
                         with st.expander("モデル学習に使用したデータのサンプルを表示"):
-                            columns_to_show = selected_features + [TARGET_VARIABLE]
-                            # lag列名も動的に生成して追加
+                            columns_to_show = selected_features.copy()
+                            if TARGET_VARIABLE not in columns_to_show:
+                                columns_to_show.append(TARGET_VARIABLE)
+
                             lag_col_name = f"{LAG_TARGET_COLUMN}_lag{LAG_DAYS}"
-                            if lag_col_name in data_for_modeling.columns:
+                            if lag_col_name in data_for_modeling.columns and lag_col_name not in columns_to_show:
                                 columns_to_show.append(lag_col_name)
+
                             existing_columns_to_show = [col for col in columns_to_show if col in data_for_modeling.columns]
+                            if pd.Series(existing_columns_to_show).duplicated().any():
+                                existing_columns_to_show = pd.Series(existing_columns_to_show).drop_duplicates().tolist()
+
                             if existing_columns_to_show:
                                 st.dataframe(data_for_modeling[existing_columns_to_show].head())
                             else:
@@ -125,8 +131,8 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: dict):
                         all_category_cols = data_for_modeling[potential_features].select_dtypes(exclude=['number', 'datetime', 'timedelta']).columns.tolist()
                         ignored_numeric = list(set(all_numeric_cols) - set(selected_numeric))
                         ignored_categorical = list(set(all_category_cols) - set(selected_categorical))
-                        # 元のラグ列名（もしあれば）と他の不要列を無視リストに追加
-                        explicitly_ignored = ['曜日_name', 'en_name', '利用台数累積_lag30'] # 元の列名 '利用台数累積_lag30' を指定
+                        # ★★★ '利用台数累積_lag30' を削除 ★★★
+                        explicitly_ignored = ['曜日_name', 'en_name'] # lag30 は選択されなければ無視される
                         final_ignore_features = list(set(ignored_numeric + ignored_categorical + explicitly_ignored))
 
                         # モデル比較
@@ -159,16 +165,36 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: dict):
 
                                 if not data_scenario.empty:
                                     with st.expander(f"予測に使用したデータ ({scenario_title_suffix}) のサンプル"):
-                                        display_columns = selected_features + [LEAD_TIME_COLUMN, TARGET_VARIABLE] + PRICE_COLUMNS
+                                        # ★★★ 初期リストを selected_features のコピーで開始 ★★★
+                                        display_columns = selected_features.copy()
+                                        # 必須列を追加 (重複しないようにチェック)
+                                        essential_columns = [LEAD_TIME_COLUMN, TARGET_VARIABLE] + PRICE_COLUMNS
+                                        for col in essential_columns:
+                                            if col in data_scenario.columns and col not in display_columns:
+                                                display_columns.append(col)
+                                        # ラグ列名を追加 (重複しないようにチェック)
                                         lag_col_name = f"{LAG_TARGET_COLUMN}_lag{LAG_DAYS}"
-                                        if lag_col_name in data_scenario.columns: display_columns.append(lag_col_name)
+                                        # ★★★ 重複チェックを追加 ★★★
+                                        if lag_col_name in data_scenario.columns and lag_col_name not in display_columns:
+                                             display_columns.append(lag_col_name)
+
+                                        # 存在する列のみにフィルタリング & 最終重複削除
                                         existing_display_columns = [col for col in display_columns if col in data_scenario.columns]
+                                        if pd.Series(existing_display_columns).duplicated().any():
+                                            existing_display_columns = pd.Series(existing_display_columns).drop_duplicates().tolist()
+
                                         if existing_display_columns:
-                                            st.dataframe(data_scenario[existing_display_columns].head())
-                                            csv = data_scenario[existing_display_columns].to_csv(index=False).encode('utf-8') # utf-8でエンコード
-                                            filename = f"scenario_data_{selected_date}_{selected_car_class}_{scenario_title_suffix.replace(' ', '_')}.csv"
-                                            st.download_button("💾 予測用データをダウンロード", csv, filename, "text/csv")
-                                        else: st.warning("表示列なし")
+                                            try:
+                                                # ★★★ エラー箇所 ★★★
+                                                st.dataframe(data_scenario[existing_display_columns].head())
+                                                csv = data_scenario[existing_display_columns].to_csv(index=False).encode('utf-8')
+                                                filename = f"scenario_data_{selected_date}_{selected_car_class}_{scenario_title_suffix.replace(' ', '_')}.csv"
+                                                st.download_button("💾 予測用データをダウンロード", csv, filename, "text/csv")
+                                            except ValueError as e:
+                                                 st.error(f"シナリオデータサンプル表示中にエラー: {e}")
+                                                 st.write("表示しようとした列:", existing_display_columns)
+                                        else:
+                                            st.warning("表示列なし")
 
                                     predictions = predict_with_model(best_model, data_scenario)
                                     if not predictions.empty:
@@ -183,7 +209,8 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: dict):
                                             actual_filtered_display = data_filtered_sorted[data_filtered_sorted[LEAD_TIME_COLUMN] <= last_change_lt]
                                             if LEAD_TIME_COLUMN not in predictions.columns:
                                                 predictions_with_lt = pd.merge(predictions, data_scenario[[LEAD_TIME_COLUMN]], left_index=True, right_index=True, how='left')
-                                            else: predictions_with_lt = predictions
+                                            else:
+                                                predictions_with_lt = predictions
                                             predictions_filtered_display = predictions_with_lt[predictions_with_lt[LEAD_TIME_COLUMN] <= last_change_lt]
 
                                             if not actual_filtered_display.empty and not predictions_filtered_display.empty:
@@ -199,14 +226,22 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: dict):
                                                 df_pred_for_table = predictions_filtered_display[[LEAD_TIME_COLUMN, 'prediction_label']].rename(columns={'prediction_label': '予測利用台数'})
                                                 df_comparison_table = pd.merge(df_actual_for_table, df_pred_for_table, on=LEAD_TIME_COLUMN, how='inner')
                                                 st.dataframe(df_comparison_table.sort_values(by=LEAD_TIME_COLUMN).reset_index(drop=True))
-                                            else: st.warning(f"LT {last_change_lt} 以降の表示データなし")
-                                    else: st.error("予測実行失敗")
-                                else: st.error("シナリオデータ作成失敗")
-                            else: st.warning("価格変動が見つからなかったため、最終価格固定シナリオでの予測は実行できません。")
-                        elif best_model is None: st.error("モデル比較失敗")
-                        else: st.error("PyCaretセットアップ失敗")
-            else: st.warning(f"'{LEAD_TIME_COLUMN}'列なし")
-        else: st.info(f"'{selected_date}' ({selected_car_class}) のデータなし")
+                                            else:
+                                                st.warning(f"LT {last_change_lt} 以降の表示データなし")
+                                    else:
+                                        st.error("予測実行失敗")
+                                else:
+                                    st.error("シナリオデータ作成失敗")
+                            else:
+                                st.warning("価格変動が見つからなかったため、最終価格固定シナリオでの予測は実行できません。")
+                        elif best_model is None:
+                            st.error("モデル比較失敗")
+                        else:
+                            st.error("PyCaretセットアップ失敗")
+            else:
+                st.warning(f"'{LEAD_TIME_COLUMN}'列なし")
+        else:
+             st.info(f"'{selected_date}' ({selected_car_class}) のデータなし")
     elif selected_date is None:
         # データがあり利用日列もあるが日付未選択の場合
         if DATE_COLUMN in data.columns and pd.api.types.is_datetime64_any_dtype(data[DATE_COLUMN]) and not data[DATE_COLUMN].isnull().all():
