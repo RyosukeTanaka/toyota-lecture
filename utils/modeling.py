@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import traceback
 import matplotlib.pyplot as plt
+import numpy as np # numpyをインポート
 
 # グローバル変数やセッションステートでモデルを保持することも検討できるが、
 # ここでは関数間でモデルオブジェクトを渡すシンプルな方法を採用。
@@ -23,10 +24,13 @@ def setup_and_compare_models(_data, target, numeric_features, categorical_featur
         # ★★★ ---------------------------------------- ★★★
 
         # html=FalseにしないとStreamlit内で表示がおかしくなることがある
+        # ★★★ setup に欠損値補完の引数を追加 ★★★
         setup_result = setup(data=_data_cleaned, target=target,
                        numeric_features=numeric_features if numeric_features else None,
                        categorical_features=categorical_features if categorical_features else None,
                        ignore_features=ignore_features if ignore_features else None,
+                       numeric_imputation='mean', # 数値特徴量のNaNは平均値で補完
+                       categorical_imputation='mode', # カテゴリ特徴量のNaNは最頻値で補完
                        session_id=123, # 再現性のため
                        verbose=False, # Streamlit上では詳細ログを抑制
                        html=False,
@@ -90,25 +94,88 @@ def predict_with_model(model, _data, target: str):
         st.error("予測に必要なモデルまたはデータがありません。")
         return pd.DataFrame() # 空のDataFrameを返す
     try:
-        # ★★★ 追加: 予測データのターゲット列にNaNがあれば行を削除 ★★★
-        _data_cleaned = _data
-        if target in _data.columns:
-            original_rows = len(_data)
-            _data_cleaned = _data.dropna(subset=[target]).copy()
-            removed_rows = original_rows - len(_data_cleaned)
-            if removed_rows > 0:
-                 st.warning(f"予測データからターゲット変数 '{target}' の欠損値を含む {removed_rows} 行を除外しました。")
-        # ★★★ --------------------------------------------- ★★★
+        # --- 予測データからターゲット列を削除 ---
+        data_for_prediction = _data.copy()
+        if target in data_for_prediction.columns:
+            data_for_prediction = data_for_prediction.drop(columns=[target])
+            st.info(f"予測実行のため、データから列 '{target}' を一時的に削除しました。")
+        # else: # 警告は削除しても良い
+        #    st.warning(f"予測データにターゲット列 '{target}' が見つかりません。")
+
+        # ★★★ 追加: 予測データの特徴量に含まれるNaNを強制的に補完 ★★★
+        st.info("予測データの特徴量のNaNを補完しています...")
+        original_nan_counts = data_for_prediction.isnull().sum()
+        cols_with_nan = original_nan_counts[original_nan_counts > 0].index.tolist()
+
+        if cols_with_nan:
+            st.warning(f"予測データの特徴量でNaNが見つかりました。補完を実行します: {cols_with_nan}")
+            for col in cols_with_nan:
+                if pd.api.types.is_numeric_dtype(data_for_prediction[col]):
+                    # 数値列は平均値で補完
+                    mean_val = data_for_prediction[col].mean()
+                    data_for_prediction[col] = data_for_prediction[col].fillna(mean_val)
+                    st.write(f"- 数値列 '{col}' のNaNを平均値 ({mean_val:.2f}) で補完しました。")
+                elif pd.api.types.is_object_dtype(data_for_prediction[col]) or pd.api.types.is_categorical_dtype(data_for_prediction[col]):
+                    # カテゴリ列は最頻値で補完
+                    mode_val = data_for_prediction[col].mode()
+                    if not mode_val.empty:
+                        fill_value = mode_val[0]
+                        data_for_prediction[col] = data_for_prediction[col].fillna(fill_value)
+                        st.write(f"- カテゴリ列 '{col}' のNaNを最頻値 ({fill_value}) で補完しました。")
+                    else:
+                        # 最頻値がない場合 (すべてNaNなど) は 'missing' で埋める
+                        data_for_prediction[col] = data_for_prediction[col].fillna('missing')
+                        st.write(f"- カテゴリ列 '{col}' は最頻値がなかったため 'missing' で補完しました。")
+                else:
+                     # その他の型はとりあえず 'missing' で埋める (またはエラーにする)
+                     data_for_prediction[col] = data_for_prediction[col].fillna('missing_unknown_type')
+                     st.warning(f"- 列 '{col}' は未知の型のため 'missing_unknown_type' で補完しました。")
+
+            # 補完後のNaN確認 (デバッグ用)
+            final_nan_counts = data_for_prediction.isnull().sum().sum()
+            if final_nan_counts == 0:
+                 st.success("予測データの特徴量のNaN補完が完了しました。")
+            else:
+                 st.error(f"NaNの補完後も {final_nan_counts} 個のNaNが残っています。処理を確認してください。")
+                 st.dataframe(data_for_prediction[data_for_prediction.isnull().any(axis=1)]) # NaNが残っている行を表示
+                 return pd.DataFrame() # エラーとして処理中断
+        else:
+             st.info("予測データの特徴量にNaNはありませんでした。")
+        # ★★★ ----------------------------------------------- ★★★
+
 
         st.info("予測を実行しています...")
-        # ★★★ predict_model に渡すデータを _data_cleaned に変更 ★★★
-        predictions = predict_model(model, data=_data_cleaned)
+        # predict_model に渡すデータを変更
+        predictions_result = predict_model(model, data=data_for_prediction)
         st.success("予測完了！")
-        # predict_modelは元のデータに 'prediction_label' 列を追加して返す
-        return predictions
+
+        # ★★★ 結果を元のデータフレーム (_data) と結合して返す ★★★
+        # predict_model は入力データ (ターゲット列なし) に prediction_label を追加して返す
+        # 元の _data のインデックスと結合して、他の列情報 (NaNのターゲット含む) を復元
+        predictions_final = _data.copy()
+        # predict_model が返す DF の prediction_label 列を結合
+        # インデックスが一致していることを確認
+        if predictions_final.index.equals(predictions_result.index):
+             predictions_final['prediction_label'] = predictions_result['prediction_label']
+        else:
+             # インデックスが異なる場合、より安全なマージを試みる (元のデータのインデックスを優先)
+             st.warning("予測結果と元のデータのインデックスが一致しません。インデックスに基づいてマージします。")
+             predictions_final = pd.merge(
+                 predictions_final,
+                 predictions_result[['prediction_label']], # 予測値のみ取得
+                 left_index=True,
+                 right_index=True,
+                 how='left' # 元のデータに予測値を結合
+             )
+             if predictions_final['prediction_label'].isnull().any():
+                  st.warning("予測結果のマージ後、一部の行で予測値がNaNになりました。インデックス不一致の可能性があります。")
+
+        return predictions_final
+
     except Exception as e:
         st.error(f"予測中にエラーが発生しました: {e}")
-        # traceback.print_exc()
+        import traceback
+        st.error(traceback.format_exc()) # 詳細なトレースバックを表示
         return pd.DataFrame()
 
 # 特徴量重要度プロットを取得する関数を追加
@@ -153,7 +220,7 @@ def get_feature_importance_plot(model):
         return None
     # finallyブロックを削除 (または plt.close('all') をコメントアウト)
     # finally:
-    #     plt.close('all') 
+    #     plt.close('all')
 
 # 特徴量重要度をDataFrameで取得する関数 (引数を変更)
 def get_feature_importance_df(model, setup_result):
