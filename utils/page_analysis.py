@@ -2,6 +2,7 @@
 
 import streamlit as st
 import pandas as pd
+import datetime # 保存ファイル名用に追加
 from .constants import ( # constants からインポート
     USAGE_COUNT_COLUMN, TARGET_VARIABLE, BOOKING_DATE_COLUMN,
     LAG_TARGET_COLUMN, LAG_DAYS, LAG_GROUP_COLS
@@ -64,6 +65,42 @@ def render_data_analysis_page(data: pd.DataFrame):
     st.header("データ探索")
     display_exploration(data)
     st.markdown("---")
+
+    # ★★★ 列削除セクションを追加 ★★★
+    st.markdown("---")
+    st.header("列の削除")
+    st.write("不要な列を選択して削除できます。")
+
+    # 現在のデータから列リストを取得
+    current_data_cols = data.columns.tolist()
+    cols_to_delete = st.multiselect(
+        "削除する列を選択してください:",
+        options=current_data_cols,
+        key="delete_columns_multiselect"
+    )
+
+    delete_cols_button = st.button("🗑️ 選択した列を削除", key="delete_columns_button")
+
+    if delete_cols_button and cols_to_delete:
+        with st.spinner("列を削除中..."):
+            try:
+                current_data = st.session_state.get('processed_data')
+                if current_data is not None:
+                    data_after_delete = current_data.drop(columns=cols_to_delete)
+                    st.session_state['processed_data'] = data_after_delete
+                    st.success(f"列 {cols_to_delete} を削除しました。")
+                    # 削除結果を即座に反映させるためにリラン
+                    st.rerun()
+                else:
+                    st.error("セッションからデータが見つかりません。")
+            except KeyError as e:
+                 st.error(f"列の削除中にエラーが発生しました: 存在しない列 {e} が指定された可能性があります。")
+            except Exception as e:
+                 st.error(f"列の削除中に予期せぬエラーが発生しました: {e}")
+    elif delete_cols_button and not cols_to_delete:
+         st.warning("削除する列が選択されていません。")
+
+    st.markdown("---") # 日別合計分析との区切り
 
     st.header(f"特定予約日以降の '{USAGE_COUNT_COLUMN}' 日別合計推移")
     st.write(f"指定した日付より**後**の予約日について、日ごとの '{USAGE_COUNT_COLUMN}' の合計値をグラフ表示します。")
@@ -176,4 +213,38 @@ def render_data_analysis_page(data: pd.DataFrame):
             st.rerun()
 
     else:
-        st.info("先に上記の「日別合計推移」の分析を実行し、グラフが0になる日付を特定してください。") 
+        st.info("先に上記の「日別合計推移」の分析を実行し、グラフが0になる日付を特定してください。")
+
+    # ★★★ 修正済みデータの保存セクションを追加 ★★★
+    st.markdown("---")
+    st.header("修正済みデータの保存")
+    st.write("現在のデータフレームの状態（データ更新、列削除など）をCSVファイルとして保存します。")
+
+    # 現在のデータを取得
+    current_data_to_save = st.session_state.get('processed_data')
+
+    if current_data_to_save is not None and isinstance(current_data_to_save, pd.DataFrame):
+        try:
+            csv_data = current_data_to_save.to_csv(index=False).encode('utf-8')
+            # ファイル名を生成（元のファイル名があれば使う、なければタイムスタンプ）
+            original_filename = st.session_state.get('last_uploaded_filename', 'data')
+            if original_filename.endswith('.csv'):
+                original_filename_base = original_filename[:-4]
+            else:
+                original_filename_base = original_filename
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            download_filename = f"{original_filename_base}_modified_{timestamp}.csv"
+
+            st.download_button(
+                label="💾 修正済みデータをCSVとして保存",
+                data=csv_data,
+                file_name=download_filename,
+                mime='text/csv',
+                key='download_modified_data_button'
+            )
+        except Exception as e:
+            st.error(f"CSVデータへの変換またはダウンロードボタンの生成中にエラーが発生しました: {e}")
+    elif current_data_to_save is None:
+         st.warning("保存対象のデータがありません。ファイルをアップロードしてください。")
+    else:
+         st.warning("セッションデータが予期せぬ形式です。") 
