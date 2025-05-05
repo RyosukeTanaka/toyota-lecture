@@ -168,8 +168,28 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: dict):
                                         else:
                                             st.warning("表示列なし")
 
-                                    # ★★★ predict_with_model に target=TARGET_VARIABLE を追加 ★★★
-                                    predictions = predict_with_model(best_model, data_scenario, target=TARGET_VARIABLE)
+                                    # ★★★ predict_with_model の戻り値をアンパック ★★★
+                                    predictions, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation = predict_with_model(best_model, data_scenario, target=TARGET_VARIABLE)
+
+                                    # ★★★ 補完ログがあればテーブルで表示 ★★★
+                                    if imputation_log:
+                                        st.subheader("予測前の特徴量欠損値補完の詳細")
+                                        log_df = pd.DataFrame(imputation_log)
+                                        if 'Imputation Value' in log_df.columns:
+                                             log_df['Imputation Value'] = log_df['Imputation Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
+                                        st.dataframe(log_df)
+                                        # ★★★ NaNがあった行も表示 ★★★
+                                        if nan_rows_before_imputation is not None and not nan_rows_before_imputation.empty:
+                                            st.subheader("NaN値が含まれていた行（補完前）")
+                                            st.dataframe(nan_rows_before_imputation)
+                                        # ★★★ 補完後のNaNがあった行も表示 ★★★
+                                        if nan_rows_after_imputation is not None and not nan_rows_after_imputation.empty:
+                                            st.subheader("NaN値が含まれていた行（補完後）")
+                                            st.dataframe(nan_rows_after_imputation)
+                                        # ★★★ ------------------------- ★★★
+                                        st.markdown("---") # テーブルと結果の間に区切り
+                                    # ★★★ ---------------------------- ★★★
+
                                     if not predictions.empty:
                                         # 結果表示
                                         st.markdown("---")

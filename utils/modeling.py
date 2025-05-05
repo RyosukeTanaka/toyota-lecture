@@ -5,6 +5,7 @@ import pandas as pd
 import traceback
 import matplotlib.pyplot as plt
 import numpy as np # numpyをインポート
+from typing import Tuple, List, Dict, Any, Optional, Union # 型ヒント用に追加
 
 # グローバル変数やセッションステートでモデルを保持することも検討できるが、
 # ここでは関数間でモデルオブジェクトを渡すシンプルな方法を採用。
@@ -88,95 +89,117 @@ def setup_and_compare_models(_data, target, numeric_features, categorical_featur
         return None, pd.DataFrame(), setup_result
 
 
-def predict_with_model(model, _data, target: str):
-    """与えられたモデル、データ、ターゲット列名で予測を実行する"""
+# ★★★ 戻り値の型ヒントを修正 ★★★
+def predict_with_model(model, _data, target: str) -> Tuple[pd.DataFrame, Optional[List[Dict]], Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+    """与えられたモデル、データ、ターゲット列名で予測を実行し、予測結果DF、補完ログ、NaNがあった行(補完前)、NaNがあった行(補完後)を返す"""
+    imputation_log: List[Dict] = [] # 補完ログを初期化
+    nan_rows_before_imputation: Optional[pd.DataFrame] = None # NaNがあった行(補完前)
+    nan_rows_after_imputation: Optional[pd.DataFrame] = None  # NaNがあった行(補完後)
+    nan_rows_mask = None # マスクを保持する変数
+
     if model is None or _data.empty:
         st.error("予測に必要なモデルまたはデータがありません。")
-        return pd.DataFrame() # 空のDataFrameを返す
+        return pd.DataFrame(), None, None, None # 空DFとNoneを返す
     try:
         # --- 予測データからターゲット列を削除 ---
         data_for_prediction = _data.copy()
         if target in data_for_prediction.columns:
             data_for_prediction = data_for_prediction.drop(columns=[target])
-            st.info(f"予測実行のため、データから列 '{target}' を一時的に削除しました。")
-        # else: # 警告は削除しても良い
-        #    st.warning(f"予測データにターゲット列 '{target}' が見つかりません。")
 
-        # ★★★ 追加: 予測データの特徴量に含まれるNaNを強制的に補完 ★★★
+        # ★★★ 予測データの特徴量に含まれるNaNを強制的に補完 & ログ記録 ★★★
         st.info("予測データの特徴量のNaNを補完しています...")
         original_nan_counts = data_for_prediction.isnull().sum()
         cols_with_nan = original_nan_counts[original_nan_counts > 0].index.tolist()
 
         if cols_with_nan:
             st.warning(f"予測データの特徴量でNaNが見つかりました。補完を実行します: {cols_with_nan}")
+
+            # ★★★ NaNを含む行のマスクを作成し、補完前のデータを保存 ★★★
+            nan_rows_mask = data_for_prediction[cols_with_nan].isnull().any(axis=1)
+            if nan_rows_mask.any():
+                 nan_rows_before_imputation = data_for_prediction[nan_rows_mask].copy()
+            # ★★★ ------------------------------------------ ★★★
+
             for col in cols_with_nan:
+                # NaNカウントを補完前に取得
+                nan_count_for_col = data_for_prediction[col].isnull().sum()
+                imputation_method = "unknown"
+                imputation_value: Any = "error"
                 if pd.api.types.is_numeric_dtype(data_for_prediction[col]):
-                    # 数値列は平均値で補完
                     mean_val = data_for_prediction[col].mean()
                     data_for_prediction[col] = data_for_prediction[col].fillna(mean_val)
-                    st.write(f"- 数値列 '{col}' のNaNを平均値 ({mean_val:.2f}) で補完しました。")
+                    imputation_method = "mean"
+                    imputation_value = mean_val
                 elif pd.api.types.is_object_dtype(data_for_prediction[col]) or pd.api.types.is_categorical_dtype(data_for_prediction[col]):
-                    # カテゴリ列は最頻値で補完
                     mode_val = data_for_prediction[col].mode()
                     if not mode_val.empty:
                         fill_value = mode_val[0]
                         data_for_prediction[col] = data_for_prediction[col].fillna(fill_value)
-                        st.write(f"- カテゴリ列 '{col}' のNaNを最頻値 ({fill_value}) で補完しました。")
+                        imputation_method = "mode"
+                        imputation_value = fill_value
                     else:
-                        # 最頻値がない場合 (すべてNaNなど) は 'missing' で埋める
                         data_for_prediction[col] = data_for_prediction[col].fillna('missing')
-                        st.write(f"- カテゴリ列 '{col}' は最頻値がなかったため 'missing' で補完しました。")
+                        imputation_method = "missing_value_string"
+                        imputation_value = "missing"
                 else:
-                     # その他の型はとりあえず 'missing' で埋める (またはエラーにする)
                      data_for_prediction[col] = data_for_prediction[col].fillna('missing_unknown_type')
-                     st.warning(f"- 列 '{col}' は未知の型のため 'missing_unknown_type' で補完しました。")
+                     imputation_method = "missing_unknown_type"
+                     imputation_value = "missing_unknown_type"
 
-            # 補完後のNaN確認 (デバッグ用)
+                # ログに追加 (Affected Rows を追加)
+                imputation_log.append({
+                    "Column": col,
+                    "Affected Rows": nan_count_for_col,
+                    "Imputation Method": imputation_method,
+                    "Imputation Value": imputation_value
+                })
+
+            # ★★★ 補完後のNaNがあった行を保存 ★★★
+            if nan_rows_mask is not None and nan_rows_mask.any():
+                 nan_rows_after_imputation = data_for_prediction[nan_rows_mask].copy()
+            # ★★★ -------------------------- ★★★
+
             final_nan_counts = data_for_prediction.isnull().sum().sum()
             if final_nan_counts == 0:
                  st.success("予測データの特徴量のNaN補完が完了しました。")
             else:
                  st.error(f"NaNの補完後も {final_nan_counts} 個のNaNが残っています。処理を確認してください。")
-                 st.dataframe(data_for_prediction[data_for_prediction.isnull().any(axis=1)]) # NaNが残っている行を表示
-                 return pd.DataFrame() # エラーとして処理中断
+                 st.dataframe(data_for_prediction[data_for_prediction.isnull().any(axis=1)])
+                 # ★★★ エラー時もログとNaN行データ(補完前後)は返す ★★★
+                 return pd.DataFrame(), imputation_log, nan_rows_before_imputation, nan_rows_after_imputation
         else:
              st.info("予測データの特徴量にNaNはありませんでした。")
         # ★★★ ----------------------------------------------- ★★★
 
-
         st.info("予測を実行しています...")
-        # predict_model に渡すデータを変更
         predictions_result = predict_model(model, data=data_for_prediction)
         st.success("予測完了！")
 
-        # ★★★ 結果を元のデータフレーム (_data) と結合して返す ★★★
-        # predict_model は入力データ (ターゲット列なし) に prediction_label を追加して返す
-        # 元の _data のインデックスと結合して、他の列情報 (NaNのターゲット含む) を復元
+        # --- 結果を元のデータフレーム (_data) と結合して返す ---
         predictions_final = _data.copy()
-        # predict_model が返す DF の prediction_label 列を結合
-        # インデックスが一致していることを確認
         if predictions_final.index.equals(predictions_result.index):
              predictions_final['prediction_label'] = predictions_result['prediction_label']
         else:
-             # インデックスが異なる場合、より安全なマージを試みる (元のデータのインデックスを優先)
              st.warning("予測結果と元のデータのインデックスが一致しません。インデックスに基づいてマージします。")
              predictions_final = pd.merge(
                  predictions_final,
-                 predictions_result[['prediction_label']], # 予測値のみ取得
+                 predictions_result[['prediction_label']],
                  left_index=True,
                  right_index=True,
-                 how='left' # 元のデータに予測値を結合
+                 how='left'
              )
              if predictions_final['prediction_label'].isnull().any():
                   st.warning("予測結果のマージ後、一部の行で予測値がNaNになりました。インデックス不一致の可能性があります。")
 
-        return predictions_final
+        # ★★★ 予測結果、補完ログ、NaN行データ(補完前後)を返す ★★★
+        return predictions_final, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation
 
     except Exception as e:
         st.error(f"予測中にエラーが発生しました: {e}")
         import traceback
-        st.error(traceback.format_exc()) # 詳細なトレースバックを表示
-        return pd.DataFrame()
+        st.error(traceback.format_exc())
+        # ★★★ エラー時もログとNaN行データ(補完前後)を返す ★★★
+        return pd.DataFrame(), imputation_log, nan_rows_before_imputation, nan_rows_after_imputation
 
 # 特徴量重要度プロットを取得する関数を追加
 # @st.cache_data # モデルオブジェクト自体はキャッシュされているので、ここは都度実行でも良いかも
