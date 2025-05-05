@@ -37,6 +37,7 @@ model_config:
   default_models_to_compare:
     - xgboost
     - lightgbm
+    - gbr
   #   - lr
   #   - ridge
   #   - lasso
@@ -44,5 +45,4 @@ model_config:
   #   - dt
   #   - rf
   #   - et
-  #   - gbr
   #   - ada 
