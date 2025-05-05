@@ -64,4 +64,5 @@
     *   最良モデルの特徴量重要度グラフとテーブル
     *   実績 vs 予測比較グラフとテーブル (価格変動があった場合)
 *   **ダウンロード:**
-    *   データ探索レポート (`data_exploration_report.md`) 
+    *   データ探索レポート (`data_exploration_report.md`)
+    *   [モデル学習に使用したデータのサンプル (選択された特徴量 + 目的変数)](merged_data_with_cumulative_False_164_1.csv) 

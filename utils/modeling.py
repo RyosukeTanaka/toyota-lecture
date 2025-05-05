@@ -21,16 +21,51 @@ def setup_and_compare_models(_data, target, numeric_features, categorical_featur
                        ignore_features=ignore_features if ignore_features else None,
                        session_id=123, # 再現性のため
                        verbose=False, # Streamlit上では詳細ログを抑制
-                       html=False)
+                       html=False,
+                       fold_strategy='timeseries', # 時系列クロスバリデーションを指定
+                       fold=fold,
+                       data_split_shuffle=False, # ★ 追加: 時系列CVでは必須
+                       fold_shuffle=False)     # ★ 追加: 時系列CVでは必須
         st.success("PyCaret セットアップ完了！")
 
-        st.info(f"選択されたモデル: {', '.join(include_models)} で比較を実行します (fold={fold}, sort='{sort_metric}')...")
+        st.info(f"選択されたモデル: {', '.join(include_models)} で比較を実行します (fold_strategy='timeseries', fold={fold}, sort='{sort_metric}')...")
         best_model = compare_models(include=include_models, fold=fold, sort=sort_metric,
                                     verbose=False)
         comparison_results = pull()
         st.success("モデル比較完了！")
         st.write("最良モデル:", best_model)
-        # セットアップ結果(setup_result)も返すように変更
+
+        # --- ★ 追加: 詳細なCV結果を表示 ★ ---
+        try:
+            st.markdown("---")
+            st.subheader("クロスバリデーション詳細結果 (各Foldのスコア)")
+            # PyCaretのバージョンや内部構造により属性名が異なる可能性あり
+            if hasattr(setup_result, 'cv_results_'):
+                 detailed_cv_results = setup_result.cv_results_
+                 if isinstance(detailed_cv_results, pd.DataFrame):
+                     st.dataframe(detailed_cv_results)
+                 elif isinstance(detailed_cv_results, dict): # 辞書の場合もある
+                     st.dataframe(pd.DataFrame(detailed_cv_results))
+                 else:
+                     st.write("CV詳細結果が予期せぬ形式です:", type(detailed_cv_results))
+            elif hasattr(setup_result, 'results_'): # 別の可能性
+                 detailed_cv_results = setup_result.results_
+                 # ... (同様に表示処理) ...
+                 if isinstance(detailed_cv_results, pd.DataFrame):
+                     st.dataframe(detailed_cv_results)
+                 elif isinstance(detailed_cv_results, dict):
+                     st.dataframe(pd.DataFrame(detailed_cv_results))
+                 else:
+                     st.write("CV詳細結果が予期せぬ形式です:", type(detailed_cv_results))
+            else:
+                 st.warning("セットアップオブジェクトからCV詳細結果属性 (`cv_results_`など) が見つかりませんでした。")
+                 st.write("利用可能な属性:", dir(setup_result)) # デバッグ用
+
+        except Exception as e_cv_detail:
+             st.error(f"CV詳細結果の表示中にエラーが発生しました: {e_cv_detail}")
+        # ------------------------------------
+
+        # UIには pull() の集計結果を引き続き返す
         return best_model, comparison_results, setup_result
 
     except Exception as e:
