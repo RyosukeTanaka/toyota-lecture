@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 import os
 import numpy as np # numpyをインポート
+from typing import Optional, List, Dict, Tuple, Union # Dict, Tuple, Union を追加
 
 @st.cache_data # Streamlitのキャッシュ機能を利用
 def load_data(uploaded_file):
@@ -19,8 +20,58 @@ def load_data(uploaded_file):
         st.error(f"CSVファイルの読み込み中に予期せぬエラーが発生しました: {e}")
         return None
 
+# ★★★ 返り値の型ヒントと Docstring を変更 ★★★
+def recalculate_lag_feature(df_processed: pd.DataFrame, lag_target_col: str, lag_days: int, booking_date_col: str, group_cols: list) -> Tuple[pd.DataFrame, Optional[Dict[str, Union[str, int]]]]:
+    """指定された列のラグ特徴量を計算してDataFrameに追加（または上書き）し、計算結果情報（辞書）を返す"""
+    lag_col_name = f'{lag_target_col}_lag{lag_days}'
+    result_info = None # 計算結果情報用
+
+    required_lag_cols = group_cols + [booking_date_col, lag_target_col]
+    if not all(col in df_processed.columns for col in required_lag_cols):
+        missing = [col for col in required_lag_cols if col not in df_processed.columns]
+        st.warning(f"ラグ計算警告: 必要な列が見つかりません。不足列: {missing}")
+        if lag_col_name not in df_processed.columns: df_processed[lag_col_name] = np.nan
+        return df_processed, None # ★★★ エラー時は None を返す ★★★
+    if not pd.api.types.is_datetime64_any_dtype(df_processed[booking_date_col]):
+        st.warning(f"ラグ計算警告: '{booking_date_col}' が日付型ではありません。")
+        if lag_col_name not in df_processed.columns: df_processed[lag_col_name] = np.nan
+        return df_processed, None
+    if not pd.api.types.is_numeric_dtype(df_processed[lag_target_col]):
+         try:
+              df_processed[lag_target_col] = pd.to_numeric(df_processed[lag_target_col], errors='coerce')
+              if df_processed[lag_target_col].isnull().all(): raise ValueError("全てNaN")
+         except Exception:
+              st.warning(f"ラグ計算警告: '{lag_target_col}' が数値型に変換できません。")
+              if lag_col_name not in df_processed.columns: df_processed[lag_col_name] = np.nan
+              return df_processed, None
+
+    try:
+        df_temp = df_processed[required_lag_cols].sort_values(by=group_cols + [booking_date_col])
+        df_temp['booking_date_minus_lag'] = df_temp[booking_date_col] - pd.Timedelta(days=lag_days)
+        df_lookup = df_temp[group_cols + [booking_date_col, lag_target_col]].rename(
+            columns={lag_target_col: lag_col_name, booking_date_col: 'lookup_booking_date'}
+        )
+        df_merged = pd.merge(
+            df_temp, df_lookup,
+            left_on=group_cols + ['booking_date_minus_lag'],
+            right_on=group_cols + ['lookup_booking_date'],
+            how='left', suffixes=('', '_lookup')
+        )
+        df_processed[lag_col_name] = df_merged.set_index(df_temp.index)[lag_col_name]
+
+        nan_count = df_processed[lag_col_name].isnull().sum()
+        result_info = {"lag_col_name": lag_col_name, "nan_count": nan_count}
+
+    except Exception as e:
+        st.error(f"ラグ特徴量 '{lag_col_name}' の計算中にエラーが発生しました: {e}")
+        if lag_col_name not in df_processed.columns:
+             df_processed[lag_col_name] = np.nan
+        return df_processed, None # エラー時は None を返す
+
+    return df_processed, result_info
+
 def preprocess_data(df):
-    """データの前処理（日付変換、価格差計算など）"""
+    """データの前処理（日付変換、価格差計算など） - ラグ計算は削除"""
     df_processed = df.copy()
 
     # --- 日付関連列の変換 ---
@@ -82,61 +133,7 @@ def preprocess_data(df):
         st.warning(f"警告: 価格差計算に必要な列 ('{price_cols[0]}', '{price_cols[1]}') のいずれか、または両方がデータに含まれていません。")
 
     # --- 価格比計算の後に追加 ---
-    st.success("データの前処理（日付変換、リードタイム再計算、価格差計算）が完了しました。")
-
-    # --- 利用台数累積_lag30 の再計算 ---
-    lag_target_col = '利用台数累積'
-    lag_days = 30
-    new_lag_col_name = f'{lag_target_col}_lag{lag_days}_recalc' # 新しい列名（または既存の列名に上書きも可）
-
-    required_lag_cols = ['利用日', '車両クラス', '予約日', lag_target_col]
-    if all(col in df_processed.columns for col in required_lag_cols) and \
-       pd.api.types.is_datetime64_any_dtype(df_processed['利用日']) and \
-       pd.api.types.is_datetime64_any_dtype(df_processed['予約日']) and \
-       pd.api.types.is_numeric_dtype(df_processed[lag_target_col]):
-
-        st.info(f"'{new_lag_col_name}' の計算を開始します...")
-        # 計算に必要な列のみを抽出し、ソート
-        df_temp = df_processed[required_lag_cols].sort_values(by=['利用日', '車両クラス', '予約日'])
-
-        # 各予約日の30日前の日付を計算
-        df_temp['予約日_minus_lag'] = df_temp['予約日'] - pd.Timedelta(days=lag_days)
-
-        # 自己結合のための準備 (ルックアップ用データフレーム)
-        df_lookup = df_temp[['利用日', '車両クラス', '予約日', lag_target_col]].rename(
-            columns={lag_target_col: new_lag_col_name} # ラグ値として取得する列名
-        )
-
-        # 元のデータとルックアップデータを結合
-        # left側の '予約日_minus_lag' と right側の '予約日' が一致する行を探す
-        df_merged = pd.merge(
-            df_temp,
-            df_lookup,
-            left_on=['利用日', '車両クラス', '予約日_minus_lag'],
-            right_on=['利用日', '車両クラス', '予約日'],
-            how='left',
-            suffixes=('', '_lookup') # 重複列名を避ける (予約日_lookup ができる)
-        )
-
-        # 不要になった列を削除し、元のインデックスを保持するためにマージ結果を選択
-        # 元のdf_processedのインデックスと一致させる必要があるため、df_tempのインデックスで再度結合
-        df_processed[new_lag_col_name] = df_merged.set_index(df_temp.index)[new_lag_col_name]
-
-        # もし既存のlag30列を上書きしたい場合は:
-        # df_processed['利用台数累積_lag30'] = df_processed[new_lag_col_name]
-        # del df_processed[new_lag_col_name]
-        # st.success(f"既存の '利用台数累積_lag30' を再計算値で上書きしました。")
-
-        # 計算結果の確認 (例: NaNの数など)
-        nan_count = df_processed[new_lag_col_name].isnull().sum()
-        st.success(f"'{new_lag_col_name}' の計算が完了しました。{nan_count}行がNaN（対応する過去データなし）となりました。")
-
-    else:
-        missing = [col for col in required_lag_cols if col not in df_processed.columns]
-        st.warning(f"警告: '{new_lag_col_name}' の計算に必要な列が見つからないか、型が不正です。不足列: {missing}")
-        # 既存の列があればそれを維持、なければ何もしない
-        if f'{lag_target_col}_lag{lag_days}' not in df_processed.columns:
-            st.warning(f"計算できなかったため、'{new_lag_col_name}' 列は作成されません。")
+    st.success("データの前処理（日付変換、リードタイム再計算、価格差計算）が完了しました。ラグ特徴量計算は別途実行されます。")
 
     return df_processed
 
@@ -192,7 +189,6 @@ def generate_exploration_report(df):
 
 def display_exploration(df):
     """Streamlit上でデータ探索結果を表示する"""
-    st.header("データ探索")
     with st.expander("データセットの詳細を表示"):
         st.subheader("基本情報")
         st.write(f"データ形状 (行数, 列数): {df.shape}")
