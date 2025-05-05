@@ -236,32 +236,50 @@ def render_data_analysis_page(data: pd.DataFrame):
     display_exploration(data)
     st.markdown("---")
 
-    # --- ★★★ 利用台数の日別合計グラフ表示に変更 ★★★ ---
-    st.header(f"特定予約日以降の '{USAGE_COUNT_COLUMN}' 日別合計推移") # ヘッダー変更
+    # --- 利用台数の日別合計グラフ表示 --- #
+    st.header(f"特定予約日以降の '{USAGE_COUNT_COLUMN}' 日別合計推移")
     st.write(f"指定した日付より**後**の予約日について、日ごとの '{USAGE_COUNT_COLUMN}' の合計値をグラフ表示します。")
-    # st.markdown("---")
 
     if analyze_button and selected_analysis_date is not None:
         with st.spinner("分析中..."):
-            # ★★★ 日別合計を計算 ★★★
+            # 日別合計を計算
             daily_sum_df = analyze_daily_sum_after_date(
                 data=data,
                 start_date=selected_analysis_date,
                 booking_date_col=BOOKING_DATE_COLUMN,
-                sum_col=USAGE_COUNT_COLUMN # 集計対象を '利用台数' に
+                sum_col=USAGE_COUNT_COLUMN
             )
 
             if daily_sum_df is not None:
                 if not daily_sum_df.empty:
                     st.success("分析完了！")
-                    # ★★★ 折れ線グラフで表示 ★★★
+                    # 折れ線グラフで表示
                     st.line_chart(daily_sum_df)
+
+                    # ★★★ 最初に0になった日付を特定して表示 ★★★
+                    zero_date = None
+                    # DataFrameを日付でソート（インデックスが日付のはず）
+                    daily_sum_df_sorted = daily_sum_df.sort_index()
+                    # 合計値の列名を取得 (例: '利用台数_合計')
+                    sum_col_name = f'{USAGE_COUNT_COLUMN}_合計'
+                    if sum_col_name in daily_sum_df_sorted.columns:
+                        # 0以下の最初の行を探す (浮動小数点誤差を考慮する場合は <= 1e-9 など)
+                        zero_rows = daily_sum_df_sorted[daily_sum_df_sorted[sum_col_name] <= 0]
+                        if not zero_rows.empty:
+                            zero_date = zero_rows.index[0].strftime('%Y-%m-%d') # 最初の日付を取得
+                            st.info(f"📈グラフの値が最初に0になった（または下回った）日付: **{zero_date}**")
+                        else:
+                            st.info("📈グラフ期間中に値が0になる日はありませんでした。")
+                    else:
+                         st.warning("グラフデータから合計列が見つかりませんでした。")
+                    # ---------------------------------------
+
                     # (オプション) データテーブルも表示
                     with st.expander("詳細データ表示"):
                          st.dataframe(daily_sum_df)
-                # else: # analyze_daily_sum_after_date内で "データが見つかりませんでした" infoが表示されるはず
+                # else: # データがない場合は analysis 関数内で info 表示
                 #     pass
-            # else: # analyze_daily_sum_after_date 内でエラー表示済み
+            # else: # analysis 関数内でエラー表示
             #    pass
     elif selected_analysis_date is None:
          st.info("サイドバーで起点となる予約日を確認してください。")

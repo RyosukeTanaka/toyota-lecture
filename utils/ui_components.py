@@ -133,8 +133,8 @@ def render_data_analysis_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[d
 
     # 日付選択。範囲が取得できた場合のみ表示
     if min_booking_date and max_booking_date:
-         # デフォルト日付を設定 (2025-04-15)
-         default_date_val = datetime.date(2025, 4, 15)
+         # デフォルト日付を設定 (2025-01-01 に変更)
+         default_date_val = datetime.date(2025, 1, 1)
          # デフォルトが範囲外の場合のフォールバック
          if not (min_booking_date <= default_date_val <= max_booking_date):
              st.warning(f"デフォルト日付 {default_date_val} がデータ範囲外 ({min_booking_date} ~ {max_booking_date}) のため、最も古い予約日を使用します。")
