@@ -232,7 +232,6 @@ def render_data_analysis_page(data: pd.DataFrame):
     selected_analysis_date, analyze_button = render_data_analysis_sidebar_widgets(data)
 
     # --- メインエリア --- #
-    st.header("データ探索")
     display_exploration(data)
     st.markdown("---")
 
