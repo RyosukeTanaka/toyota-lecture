@@ -36,6 +36,31 @@ def render_prediction_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[str]
         key="pred_model_select"
     )
     
+    # 保存済みモデル一覧をサイドバーに表示
+    with st.expander("保存済みモデル一覧", expanded=False):
+        if saved_models:
+            # データフレームに変換して表示
+            models_data = []
+            for model in saved_models:
+                model_data = {
+                    "モデル名": model.get("model_name", "不明"),
+                    "モデルタイプ": model.get("model_type", "不明"),
+                    "車両クラス": model.get("car_class", "全クラス"),
+                }
+                # メトリクスがある場合は追加
+                if "metrics" in model:
+                    for metric_name, metric_value in model["metrics"].items():
+                        if isinstance(metric_value, (int, float)):
+                            model_data[metric_name] = round(metric_value, 4)
+                        else:
+                            model_data[metric_name] = metric_value
+                models_data.append(model_data)
+            
+            models_df = pd.DataFrame(models_data)
+            st.dataframe(models_df, use_container_width=True)
+        else:
+            st.info("保存済みモデルがありません")
+    
     # 選択されたモデル情報を取得
     selected_model_info = next((model for model in saved_models if model["model_name"] == selected_model_name), None)
     
@@ -192,8 +217,8 @@ def render_data_analysis_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[d
 
     # 日付選択。範囲が取得できた場合のみ表示
     if min_booking_date and max_booking_date:
-         # デフォルト日付を設定 (2025-01-01 に変更)
-         default_date_val = datetime.date(2025, 1, 1)
+         # デフォルト日付を設定 (2025-01-05 に変更)
+         default_date_val = datetime.date(2025, 1, 5)
          # デフォルトが範囲外の場合のフォールバック
          if not (min_booking_date <= default_date_val <= max_booking_date):
              st.warning(f"デフォルト日付 {default_date_val} がデータ範囲外 ({min_booking_date} ~ {max_booking_date}) のため、最も古い予約日を使用します。")

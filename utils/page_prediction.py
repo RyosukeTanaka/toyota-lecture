@@ -137,8 +137,8 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                         if model is None:
                             st.error("モデルの読み込みに失敗しました。")
                             return
-
-                        # シナリオ予測
+                        
+                        # シナリオ予測（インデントを修正）
                         last_change_lt = find_last_price_change_lead_time(data_filtered_sorted, PRICE_COLUMNS, LEAD_TIME_COLUMN)
                         if last_change_lt is not None:
                             st.write(f"価格最終変更リードタイム: {last_change_lt}")
@@ -159,7 +159,7 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                                     for col in essential_columns:
                                         if col in data_scenario.columns and col not in display_columns:
                                             display_columns.append(col)
-                                    
+                                
                                     # ラグ列名を追加 (重複しないようにチェック)
                                     lag_col_name = f"{LAG_TARGET_COLUMN}_lag{LAG_DAYS}"
                                     if lag_col_name in data_scenario.columns and lag_col_name not in display_columns:
@@ -181,7 +181,7 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                                              st.write("表示しようとした列:", existing_display_columns)
                                     else:
                                         st.warning("表示列なし")
-                                
+
                                 # モデルのメタデータを取得
                                 model_filename = selected_model_info.get("filename")
                                 model_metadata = None
@@ -347,22 +347,22 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                                             st.warning("特徴量情報がないため、特徴量変換なしで予測を試行します。エラーが発生する可能性があります。")
                                             predictions, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation = predict_with_model(model, data_scenario, target=TARGET_VARIABLE)
 
-                                        # 補完ログがあればテーブルで表示
-                                        if imputation_log:
-                                            st.subheader("予測前の特徴量欠損値補完の詳細")
-                                            log_df = pd.DataFrame(imputation_log)
-                                            if 'Imputation Value' in log_df.columns:
-                                                 log_df['Imputation Value'] = log_df['Imputation Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
-                                            st.dataframe(log_df)
+                                    # 補完ログがあればテーブルで表示
+                                    if imputation_log:
+                                        st.subheader("予測前の特徴量欠損値補完の詳細")
+                                        log_df = pd.DataFrame(imputation_log)
+                                        if 'Imputation Value' in log_df.columns:
+                                             log_df['Imputation Value'] = log_df['Imputation Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
+                                        st.dataframe(log_df)
                                             
-                                            if nan_rows_before_imputation is not None and not nan_rows_before_imputation.empty:
-                                                st.subheader("NaN値が含まれていた行（補完前）")
-                                                st.dataframe(nan_rows_before_imputation)
+                                        if nan_rows_before_imputation is not None and not nan_rows_before_imputation.empty:
+                                            st.subheader("NaN値が含まれていた行（補完前）")
+                                            st.dataframe(nan_rows_before_imputation)
                                             
-                                            if nan_rows_after_imputation is not None and not nan_rows_after_imputation.empty:
-                                                st.subheader("NaN値が含まれていた行（補完後）")
-                                                st.dataframe(nan_rows_after_imputation)
-                                    
+                                        if nan_rows_after_imputation is not None and not nan_rows_after_imputation.empty:
+                                            st.subheader("NaN値が含まれていた行（補完後）")
+                                            st.dataframe(nan_rows_after_imputation)
+
                                     # フォールバック結果の表示
                                     if 'predictions' in locals() and not predictions.empty:
                                         st.success("フォールバック予測が成功しました！")
