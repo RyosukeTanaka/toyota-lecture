@@ -21,7 +21,8 @@ from utils.modeling import (
     setup_and_compare_models, predict_with_model, get_feature_importance_df
 )
 from utils.ui_components import (
-    render_prediction_sidebar_widgets, render_data_analysis_sidebar_widgets
+    render_prediction_sidebar_widgets, render_data_analysis_sidebar_widgets,
+    render_model_training_sidebar_widgets # 新しく追加したウィジェット
 )
 from utils.analysis import analyze_unique_count_after_date, analyze_daily_sum_after_date
 from utils.data_modification import nullify_usage_data_after_date # データ更新関数
@@ -31,6 +32,8 @@ from utils.constants import (
 )
 from utils.page_prediction import render_prediction_analysis_page # 予測ページ関数
 from utils.page_analysis import render_data_analysis_page     # 分析ページ関数
+from utils.page_model_training import render_model_training_page # 新しく追加したモデルトレーニングページ関数
+from utils.model_storage import ensure_model_directory # モデル保存ディレクトリ確保
 
 # --- 定数 ---
 TARGET_VARIABLE = '利用台数累積'
@@ -53,16 +56,13 @@ def load_config(config_path='config.yaml'):
         st.sidebar.error(f"設定ファイル読み込みエラー: {e}")
         return {}
 
-# --- 予測・比較分析ページ描画関数 (削除) ---
-# def render_prediction_analysis_page(data: pd.DataFrame, config: dict): ...
-
-# --- データ分析・修正ページ描画関数 (削除) ---
-# def render_data_analysis_page(data: pd.DataFrame): ...
-
 # --- アプリケーション本体 (main関数) ---
 def main():
     st.set_page_config(layout="wide")
     config = load_config()
+    
+    # モデル保存ディレクトリを確保
+    ensure_model_directory()
 
     # --- セッションステートの初期化 ---
     if 'processed_data' not in st.session_state:
@@ -79,7 +79,7 @@ def main():
         st.title("分析メニュー")
         app_mode = st.radio(
             "実行したい分析を選択してください:",
-            ("予測・比較分析", "データ分析・修正"),
+            ("モデルトレーニング", "予測分析", "データ分析・修正"),
             key="app_mode_select"
         )
         st.markdown("---")
@@ -132,10 +132,12 @@ def main():
     # --- ページ表示 --- #
     current_data = st.session_state.get('processed_data')
     if current_data is not None:
-        if app_mode == "予測・比較分析":
-            render_prediction_analysis_page(current_data, config) # インポートした関数を呼び出し
+        if app_mode == "モデルトレーニング":
+            render_model_training_page(current_data, config)  # 新しく追加したページ
+        elif app_mode == "予測分析":
+            render_prediction_analysis_page(current_data, config)  # 更新したページ
         elif app_mode == "データ分析・修正":
-            render_data_analysis_page(current_data)             # インポートした関数を呼び出し
+            render_data_analysis_page(current_data)           # 既存のままのページ
         else:
             st.error("無効なモードが選択されました。")
     elif uploaded_file is None:

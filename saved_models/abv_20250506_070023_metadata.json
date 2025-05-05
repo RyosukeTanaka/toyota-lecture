@@ -1,0 +1,22 @@
+{
+  "model_name": "abv",
+  "model_type": "GradientBoostingRegressor",
+  "target_variable": "利用台数累積",
+  "selected_features": [
+    "利用台数累積_lag30",
+    "価格差",
+    "価格比",
+    "ja_name",
+    "車両クラス"
+  ],
+  "car_class": "C1",
+  "creation_date": "20250506_070023",
+  "metrics": {
+    "MAE": 4.5915,
+    "MSE": 46.9015,
+    "RMSE": 6.2216,
+    "R2": 0.5578,
+    "RMSLE": 0.576
+  },
+  "comparison_results_path": "saved_models\\abv_20250506_070023_comparison.csv"
+}
