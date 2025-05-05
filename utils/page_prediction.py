@@ -23,7 +23,8 @@ from .modeling import ( # 相対インポートに変更
 from .ui_components import ( # 相対インポートに変更
     render_prediction_sidebar_widgets
 )
-from .model_storage import load_model, list_saved_models, load_comparison_results
+from .model_storage import load_model, list_saved_models, load_comparison_results, get_model_metadata, prepare_features_for_prediction
+import numpy as np
 
 # --- 予測・比較分析ページ描画関数 ---
 def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
@@ -32,21 +33,72 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
     # --- サイドバーウィジェットの描画と値の取得 ---
     (
         selected_car_class,
-        selected_date,
         selected_model_info,
-        run_prediction
+        _  # 予測実行ボタンはメインエリアで表示するため無視
     ) = render_prediction_sidebar_widgets(data)
 
     # --- メインエリア --- #
-    st.subheader("処理済みデータプレビュー (現在の状態)")
-    st.dataframe(data.head())
-    # データ探索は別ページ
-
-    st.markdown("---") # プレビューと結果の間に区切り
-
     if not selected_model_info:
         st.warning("予測を実行するには、まず「モデルトレーニング」ページでモデルを作成し、サイドバーで使用するモデルを選択してください。")
         return
+
+    # モデル比較結果の詳細セクション（独立したセクションとして表示）
+    st.header("モデル比較結果の詳細")
+    comparison_path = selected_model_info.get("comparison_results_path")
+    if comparison_path:
+        comparison_results = load_comparison_results(comparison_path)
+        if comparison_results is not None:
+            st.dataframe(comparison_results)
+        else:
+            st.warning("比較結果を読み込めませんでした。")
+    else:
+        st.info("このモデルには比較結果が保存されていません。")
+    
+    st.markdown("---") # 比較結果と次のセクションの間に区切り線
+
+    # --- 分析日の選択（モデル比較結果の後に表示） ---
+    st.header("利用日の選択")
+    
+    # 選択された車両クラスでデータをフィルタリング (日付選択用)
+    if selected_car_class == "全クラス":
+        data_for_date_selection = data
+    else:
+        data_for_date_selection = data[data[CAR_CLASS_COLUMN] == selected_car_class]
+
+    # 利用日の選択ウィジェット
+    selected_date = None
+    if DATE_COLUMN in data_for_date_selection.columns and pd.api.types.is_datetime64_any_dtype(data_for_date_selection[DATE_COLUMN]):
+        available_dates = data_for_date_selection[DATE_COLUMN].dt.date.unique()
+        if len(available_dates) > 0:
+            date_options_str = ['日付を選択'] + sorted([d.strftime('%Y-%m-%d') for d in available_dates])
+            selected_date_str = st.selectbox(
+                f"'{DATE_COLUMN}'を選択:",
+                options=date_options_str, index=0, key="pred_date_select"
+            )
+            if selected_date_str != '日付を選択':
+                try:
+                    selected_date = pd.to_datetime(selected_date_str).date()
+                except ValueError:
+                    st.error("選択された日付の形式が無効です。")
+                    selected_date = None # Noneにリセット
+        else:
+            st.info(f"'{selected_car_class}'クラスには有効な'{DATE_COLUMN}'データがありません。")
+    else:
+        st.warning(f"'{DATE_COLUMN}'列がないか日付型ではありません。")
+        selected_date = None # Noneにリセット
+
+    # 予測実行ボタン（モデルと利用日の両方が選択された場合に表示）
+    run_prediction = False
+    if selected_model_info and selected_date:
+        run_prediction = st.button("🔮 予測実行", key="run_prediction")
+    
+    st.markdown("---") # 日付選択と次のセクションの間に区切り線
+
+    # 処理済みデータプレビュー（日付選択の後に表示）
+    st.subheader("処理済みデータプレビュー (現在の状態)")
+    st.dataframe(data.head())
+
+    st.markdown("---") # データプレビューと次のセクションの間に区切り線
 
     if selected_date is not None:
         st.header(f"分析結果: {selected_date} ({selected_car_class})")
@@ -73,16 +125,6 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                     st.subheader("価格推移")
                     fig_prices = plot_price_trends(data_filtered_sorted, x_col=LEAD_TIME_COLUMN, y_cols=PRICE_COLUMNS, title=f"{selected_date} {selected_car_class} 価格推移")
                     st.plotly_chart(fig_prices, use_container_width=True)
-
-                # モデル比較結果（サイドバーに表示したモデル情報とは別に、詳細情報をエクスパンダーで表示）
-                comparison_path = selected_model_info.get("comparison_results_path")
-                if comparison_path:
-                    with st.expander("モデル比較結果の詳細"):
-                        comparison_results = load_comparison_results(comparison_path)
-                        if comparison_results is not None:
-                            st.dataframe(comparison_results)
-                        else:
-                            st.warning("比較結果を読み込めませんでした。")
 
                 # 予測実行セクション
                 if run_prediction:
@@ -139,58 +181,220 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                                              st.write("表示しようとした列:", existing_display_columns)
                                     else:
                                         st.warning("表示列なし")
-
-                                # 予測実行
-                                predictions, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation = predict_with_model(model, data_scenario, target=TARGET_VARIABLE)
-
-                                # 補完ログがあればテーブルで表示
-                                if imputation_log:
-                                    st.subheader("予測前の特徴量欠損値補完の詳細")
-                                    log_df = pd.DataFrame(imputation_log)
-                                    if 'Imputation Value' in log_df.columns:
-                                         log_df['Imputation Value'] = log_df['Imputation Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
-                                    st.dataframe(log_df)
+                                
+                                # モデルのメタデータを取得
+                                model_filename = selected_model_info.get("filename")
+                                model_metadata = None
+                                
+                                # デバッグログをエクスパンダーに移動
+                                with st.expander("予測プロセスのデバッグ情報", expanded=False):
+                                    st.info("モデルの内部構造から特徴量情報を検査中...")
                                     
-                                    if nan_rows_before_imputation is not None and not nan_rows_before_imputation.empty:
-                                        st.subheader("NaN値が含まれていた行（補完前）")
-                                        st.dataframe(nan_rows_before_imputation)
+                                    # *** 新しい方法: モデル自体から特徴量名を直接取得する ***
+                                    try:
+                                        # スキップされる可能性がある一般的なモデル・パイプライン属性
+                                        skipped_attrs = ['_isfit', 'classes_', 'n_classes_', 'n_features_in_', 'base_score', 'label_encoder', 'estimator']
+                                        
+                                        # モデル属性の検査
+                                        model_attrs = dir(model)
+                                        feature_attrs = [attr for attr in model_attrs 
+                                                       if 'feature' in attr.lower() and attr not in skipped_attrs]
+                                        
+                                        # 特徴量名を検出
+                                        model_features = None
+                                        if hasattr(model, 'feature_names_in_'):
+                                            model_features = list(model.feature_names_in_)
+                                            st.success(f"モデルから直接 {len(model_features)}個の特徴量名を取得しました (feature_names_in_)")
+                                        elif hasattr(model, 'get_booster') and hasattr(model.get_booster(), 'feature_names'):
+                                            # XGBoostの場合
+                                            model_features = model.get_booster().feature_names
+                                            st.success(f"XGBoostモデルから {len(model_features)}個の特徴量名を取得しました")
+                                        elif hasattr(model, 'steps'):
+                                            # パイプラインの場合は最後のステップを確認
+                                            final_step = model.steps[-1][1]
+                                            if hasattr(final_step, 'feature_names_in_'):
+                                                model_features = list(final_step.feature_names_in_)
+                                                st.success(f"パイプラインの最終ステップから {len(model_features)}個の特徴量名を取得しました")
+                                        
+                                        # メタデータの特徴量名を上書き
+                                        if model_features:
+                                            if model_filename:
+                                                model_metadata = get_model_metadata(model_filename)
+                                                if model_metadata:
+                                                    # 元のmodel_columnsを保存
+                                                    original_columns = model_metadata.get("model_columns", [])
+                                                    if original_columns:
+                                                        st.info(f"メタデータの特徴量名 ({len(original_columns)}個) をモデルから取得した特徴量名で上書きします")
+                                                    
+                                                    # model_featuresで上書き
+                                                    model_metadata["model_columns"] = model_features
+                                        
+                                        # モデル構造のその他の情報を表示
+                                        st.info(f"モデルの型: {type(model).__name__}")
+                                        if feature_attrs:
+                                            st.info(f"検出された特徴量関連の属性: {feature_attrs}")
                                     
-                                    if nan_rows_after_imputation is not None and not nan_rows_after_imputation.empty:
-                                        st.subheader("NaN値が含まれていた行（補完後）")
-                                        st.dataframe(nan_rows_after_imputation)
+                                    except Exception as e:
+                                        st.warning(f"モデルの内部構造検査中にエラー: {e}")
                                     
-                                    st.markdown("---") # テーブルと結果の間に区切り
-
-                                if not predictions.empty:
-                                    # 結果表示
-                                    st.markdown("---")
+                                    if not model_metadata and model_filename:
+                                        model_metadata = get_model_metadata(model_filename)
                                     
-                                    # 実績 vs 予測の比較グラフと表
-                                    st.subheader(f"実績 vs 予測比較 ({scenario_title_suffix}) - LT {last_change_lt} 以降")
-                                    actual_filtered_display = data_filtered_sorted[data_filtered_sorted[LEAD_TIME_COLUMN] <= last_change_lt]
-                                    if LEAD_TIME_COLUMN not in predictions.columns:
-                                        predictions_with_lt = pd.merge(predictions, data_scenario[[LEAD_TIME_COLUMN]], left_index=True, right_index=True, how='left')
+                                    if model_metadata:
+                                        if "model_columns" in model_metadata:
+                                            st.success(f"特徴量情報が存在します: {len(model_metadata['model_columns'])}個の列")
+                                            
+                                            # 特徴量情報の例を表示
+                                            st.subheader("特徴量情報サンプル")
+                                            st.json(model_metadata["model_columns"][:10])
+                                        else:
+                                            st.warning("特徴量情報が見つかりません。予測が失敗する可能性があります。")
+                                
+                                # 予測時のフォールバック方法: ダイレクト予測を試みる
+                                try:
+                                    # 予測プロセスの開始を通知
+                                    st.info("予測処理を開始します...")
+                                    
+                                    # デバッグログをエクスパンダーに移動
+                                    with st.expander("予測実行詳細ログ", expanded=False):
+                                        st.info("モデルのpredict()メソッドを直接使用して予測を実行します...")
+                                        
+                                        # 日付列を文字列に変換（最終手段）
+                                        scen_data_transformed = data_scenario.copy()
+                                        date_cols = scen_data_transformed.select_dtypes(include=['datetime64']).columns
+                                        for col in date_cols:
+                                            scen_data_transformed[col] = scen_data_transformed[col].dt.strftime('%Y-%m-%d')
+                                        
+                                        # ターゲット変数がある場合は除去
+                                        if TARGET_VARIABLE in scen_data_transformed.columns:
+                                            X = scen_data_transformed.drop(columns=[TARGET_VARIABLE])
+                                        else:
+                                            X = scen_data_transformed
+                                        
+                                        # 直接予測
+                                        y_pred = None
+                                        
+                                        # 1. 通常のpredictを試行
+                                        try:
+                                            st.info("モデルの直接予測を試行...")
+                                            if hasattr(model, 'predict'):
+                                                y_pred = model.predict(X)
+                                                st.success("直接予測成功!")
+                                        except Exception as e1:
+                                            st.error(f"直接予測でエラー: {e1}")
+                                            
+                                            # 2. 特徴量変換を実行して再度試行
+                                            try:
+                                                if model_metadata and "model_columns" in model_metadata:
+                                                    st.info("特徴量変換を適用して再試行...")
+                                                    transformed_data = prepare_features_for_prediction(X, model_metadata)
+                                                    y_pred = model.predict(transformed_data)
+                                                    st.success("特徴量変換後の予測成功!")
+                                            except Exception as e2:
+                                                st.error(f"特徴量変換後の予測でもエラー: {e2}")
+                                    
+                                    # 予測結果を利用
+                                    if y_pred is not None:
+                                        st.success("予測完了!")
+                                        
+                                        # 結果をデータフレームに変換
+                                        predictions_result = data_scenario.copy()
+                                        predictions_result['prediction_label'] = y_pred
+                                        
+                                        # 比較グラフと表を表示
+                                        st.markdown("---")
+                                        st.subheader(f"実績 vs 予測比較 ({scenario_title_suffix}) - LT {last_change_lt} 以降")
+                                        
+                                        actual_filtered_display = data_filtered_sorted[data_filtered_sorted[LEAD_TIME_COLUMN] <= last_change_lt]
+                                        predictions_filtered_display = predictions_result[predictions_result[LEAD_TIME_COLUMN] <= last_change_lt]
+                                        
+                                        if not actual_filtered_display.empty and not predictions_filtered_display.empty:
+                                            fig_compare = plot_comparison_curve(
+                                                df_actual=actual_filtered_display, 
+                                                df_predicted=predictions_filtered_display,
+                                                x_col=LEAD_TIME_COLUMN, 
+                                                y_actual_col=TARGET_VARIABLE, 
+                                                y_pred_col='prediction_label',
+                                                title=f"{selected_date} {selected_car_class} 実績 vs 予測 (LT {last_change_lt} 以降)"
+                                            )
+                                            st.plotly_chart(fig_compare, use_container_width=True)
+                                            
+                                            st.subheader(f"実績 vs 予測 データテーブル (LT {last_change_lt} 以降)")
+                                            df_actual_for_table = actual_filtered_display[[LEAD_TIME_COLUMN, TARGET_VARIABLE]].rename(columns={TARGET_VARIABLE: '実績利用台数'})
+                                            df_pred_for_table = predictions_filtered_display[[LEAD_TIME_COLUMN, 'prediction_label']].rename(columns={'prediction_label': '予測利用台数'})
+                                            df_comparison_table = pd.merge(df_actual_for_table, df_pred_for_table, on=LEAD_TIME_COLUMN, how='inner')
+                                            st.dataframe(df_comparison_table.sort_values(by=LEAD_TIME_COLUMN).reset_index(drop=True))
+                                        else:
+                                            st.warning(f"LT {last_change_lt} 以降の表示データがありません")
                                     else:
-                                        predictions_with_lt = predictions
-                                    predictions_filtered_display = predictions_with_lt[predictions_with_lt[LEAD_TIME_COLUMN] <= last_change_lt]
+                                        st.error("すべての予測方法が失敗しました")
+                                
+                                except Exception as e:
+                                    st.error(f"予測処理中にエラー: {e}")
+                                    
+                                    # 従来の方法をエクスパンダーに移動
+                                    with st.expander("フォールバック予測方法の詳細ログ", expanded=False):
+                                        st.warning("フォールバック予測方法を試行します...")
+                                        # 従来の方法を試みる
+                                        if model_metadata and "model_columns" in model_metadata:
+                                            # 特徴量変換を適用
+                                            st.info("予測データを学習時の特徴量形式に変換します...")
+                                            data_for_prediction = prepare_features_for_prediction(data_scenario, model_metadata)
+                                            # 予測実行
+                                            predictions, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation = predict_with_model(model, data_for_prediction, target=TARGET_VARIABLE)
+                                        else:
+                                            # 特徴量変換なしで予測を試行
+                                            st.warning("特徴量情報がないため、特徴量変換なしで予測を試行します。エラーが発生する可能性があります。")
+                                            predictions, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation = predict_with_model(model, data_scenario, target=TARGET_VARIABLE)
 
-                                    if not actual_filtered_display.empty and not predictions_filtered_display.empty:
-                                        fig_compare = plot_comparison_curve(
-                                            df_actual=actual_filtered_display, df_predicted=predictions_filtered_display,
-                                            x_col=LEAD_TIME_COLUMN, y_actual_col=TARGET_VARIABLE, y_pred_col='prediction_label',
-                                            title=f"{selected_date} {selected_car_class} 実績 vs 予測 (LT {last_change_lt} 以降)"
-                                        )
-                                        st.plotly_chart(fig_compare, use_container_width=True)
+                                        # 補完ログがあればテーブルで表示
+                                        if imputation_log:
+                                            st.subheader("予測前の特徴量欠損値補完の詳細")
+                                            log_df = pd.DataFrame(imputation_log)
+                                            if 'Imputation Value' in log_df.columns:
+                                                 log_df['Imputation Value'] = log_df['Imputation Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
+                                            st.dataframe(log_df)
+                                            
+                                            if nan_rows_before_imputation is not None and not nan_rows_before_imputation.empty:
+                                                st.subheader("NaN値が含まれていた行（補完前）")
+                                                st.dataframe(nan_rows_before_imputation)
+                                            
+                                            if nan_rows_after_imputation is not None and not nan_rows_after_imputation.empty:
+                                                st.subheader("NaN値が含まれていた行（補完後）")
+                                                st.dataframe(nan_rows_after_imputation)
+                                    
+                                    # フォールバック結果の表示
+                                    if 'predictions' in locals() and not predictions.empty:
+                                        st.success("フォールバック予測が成功しました！")
+                                        # 結果表示
+                                        st.markdown("---")
+                                        
+                                        # 実績 vs 予測の比較グラフと表
+                                        st.subheader(f"実績 vs 予測比較 ({scenario_title_suffix}) - LT {last_change_lt} 以降")
+                                        actual_filtered_display = data_filtered_sorted[data_filtered_sorted[LEAD_TIME_COLUMN] <= last_change_lt]
+                                        if LEAD_TIME_COLUMN not in predictions.columns:
+                                            predictions_with_lt = pd.merge(predictions, data_scenario[[LEAD_TIME_COLUMN]], left_index=True, right_index=True, how='left')
+                                        else:
+                                            predictions_with_lt = predictions
+                                        predictions_filtered_display = predictions_with_lt[predictions_with_lt[LEAD_TIME_COLUMN] <= last_change_lt]
 
-                                        st.subheader(f"実績 vs 予測 データテーブル (LT {last_change_lt} 以降)")
-                                        df_actual_for_table = actual_filtered_display[[LEAD_TIME_COLUMN, TARGET_VARIABLE]].rename(columns={TARGET_VARIABLE: '実績利用台数'})
-                                        df_pred_for_table = predictions_filtered_display[[LEAD_TIME_COLUMN, 'prediction_label']].rename(columns={'prediction_label': '予測利用台数'})
-                                        df_comparison_table = pd.merge(df_actual_for_table, df_pred_for_table, on=LEAD_TIME_COLUMN, how='inner')
-                                        st.dataframe(df_comparison_table.sort_values(by=LEAD_TIME_COLUMN).reset_index(drop=True))
+                                        if not actual_filtered_display.empty and not predictions_filtered_display.empty:
+                                            fig_compare = plot_comparison_curve(
+                                                df_actual=actual_filtered_display, df_predicted=predictions_filtered_display,
+                                                x_col=LEAD_TIME_COLUMN, y_actual_col=TARGET_VARIABLE, y_pred_col='prediction_label',
+                                                title=f"{selected_date} {selected_car_class} 実績 vs 予測 (LT {last_change_lt} 以降)"
+                                            )
+                                            st.plotly_chart(fig_compare, use_container_width=True)
+
+                                            st.subheader(f"実績 vs 予測 データテーブル (LT {last_change_lt} 以降)")
+                                            df_actual_for_table = actual_filtered_display[[LEAD_TIME_COLUMN, TARGET_VARIABLE]].rename(columns={TARGET_VARIABLE: '実績利用台数'})
+                                            df_pred_for_table = predictions_filtered_display[[LEAD_TIME_COLUMN, 'prediction_label']].rename(columns={'prediction_label': '予測利用台数'})
+                                            df_comparison_table = pd.merge(df_actual_for_table, df_pred_for_table, on=LEAD_TIME_COLUMN, how='inner')
+                                            st.dataframe(df_comparison_table.sort_values(by=LEAD_TIME_COLUMN).reset_index(drop=True))
+                                        else:
+                                            st.warning(f"LT {last_change_lt} 以降の表示データなし")
                                     else:
-                                        st.warning(f"LT {last_change_lt} 以降の表示データなし")
-                                else:
-                                    st.error("予測実行失敗")
+                                        st.error("すべての予測方法が失敗しました")
                             else:
                                 st.error("シナリオデータ作成失敗")
                         else:
@@ -200,6 +404,6 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
         else:
              st.info(f"'{selected_date}' ({selected_car_class}) のデータなし")
     elif selected_date is None:
-        # データがあり利用日列もあるが日付未選択の場合
+        # 日付選択フィールドの存在確認
         if DATE_COLUMN in data.columns and pd.api.types.is_datetime64_any_dtype(data[DATE_COLUMN]) and not data[DATE_COLUMN].isnull().all():
-             st.info("サイドバーから分析したい利用日を選択してください。") 
+             st.info("分析結果を表示するには、利用日を選択してください。") 

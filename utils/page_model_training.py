@@ -176,6 +176,29 @@ def render_model_training_page(data: pd.DataFrame, config: Dict[str, Any]):
                     
                     model_type = type(best_model).__name__
                     
+                    # 学習時の特徴量情報を取得
+                    model_columns = None
+                    try:
+                        # 1. PyCaretのパイプラインから直接取得を試みる
+                        if hasattr(setup_result, 'pipeline') and hasattr(setup_result.pipeline, 'feature_names_in_'):
+                            model_columns = list(setup_result.pipeline.feature_names_in_)
+                        # 2. 前処理後の特徴量名を取得
+                        elif hasattr(setup_result, 'X_train_transformed') and hasattr(setup_result.X_train_transformed, 'columns'):
+                            model_columns = list(setup_result.X_train_transformed.columns)
+                        # 3. get_configメソッドを使用
+                        elif hasattr(setup_result, 'get_config'):
+                            X_train_transformed = setup_result.get_config('X_train_transformed')
+                            if X_train_transformed is not None and hasattr(X_train_transformed, 'columns'):
+                                model_columns = list(X_train_transformed.columns)
+                        
+                        if model_columns:
+                            st.success(f"学習時の特徴量列名 {len(model_columns)} 個を抽出しました")
+                        else:
+                            st.warning("学習時の特徴量列名を抽出できませんでした。予測時の特徴量変換が制限される可能性があります。")
+                    except Exception as e:
+                        st.warning(f"特徴量情報の抽出中にエラーが発生しました: {e}")
+                        st.warning("学習時の特徴量情報が保存されないため、予測時の特徴量変換が制限される可能性があります。")
+                    
                     # 保存を実行
                     try:
                         model_path = save_model(
@@ -186,7 +209,9 @@ def render_model_training_page(data: pd.DataFrame, config: Dict[str, Any]):
                             selected_features=selected_features,
                             car_class=selected_car_class,
                             comparison_results=comparison_results,
-                            metrics=metrics
+                            metrics=metrics,
+                            model_columns=model_columns,
+                            categorical_features=selected_categorical
                         )
                         st.success(f"モデル '{model_name}' を保存しました！")
                         st.info(f"保存先: {model_path}")

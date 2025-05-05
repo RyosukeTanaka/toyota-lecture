@@ -172,27 +172,51 @@ def predict_with_model(model, _data, target: str) -> Tuple[pd.DataFrame, Optiona
         # ★★★ ----------------------------------------------- ★★★
 
         st.info("予測を実行しています...")
-        predictions_result = predict_model(model, data=data_for_prediction)
-        st.success("予測完了！")
+        
+        # PyCaretのpredict_modelを使用せず、モデルを直接使用（保存・読み込み後の互換性のため）
+        try:
+            # モデルがパイプラインの場合
+            if hasattr(model, 'predict'):
+                # 直接予測を実行
+                predictions = model.predict(data_for_prediction)
+                
+                # 結果をデータフレームに変換
+                predictions_result = _data.copy()
+                predictions_result['prediction_label'] = predictions
+                
+                st.success("予測完了！")
+                return predictions_result, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation
+            else:
+                st.error("モデルにpredict()メソッドがありません。モデルの形式を確認してください。")
+                return pd.DataFrame(), imputation_log, nan_rows_before_imputation, nan_rows_after_imputation
+        except Exception as predict_error:
+            st.error(f"predict()メソッドでの予測中にエラーが発生しました: {predict_error}")
+            # PyCaret方式をフォールバックとして試行
+            try:
+                st.warning("PyCaret predict_model()を試行します...")
+                predictions_result = predict_model(model, data=data_for_prediction)
+                st.success("PyCaret方式での予測完了！")
+                
+                # --- 結果を元のデータフレーム (_data) と結合して返す ---
+                predictions_final = _data.copy()
+                if predictions_final.index.equals(predictions_result.index):
+                     predictions_final['prediction_label'] = predictions_result['prediction_label']
+                else:
+                     st.warning("予測結果と元のデータのインデックスが一致しません。インデックスに基づいてマージします。")
+                     predictions_final = pd.merge(
+                         predictions_final,
+                         predictions_result[['prediction_label']],
+                         left_index=True,
+                         right_index=True,
+                         how='left'
+                     )
+                     if predictions_final['prediction_label'].isnull().any():
+                          st.warning("予測結果のマージ後、一部の行で予測値がNaNになりました。インデックス不一致の可能性があります。")
 
-        # --- 結果を元のデータフレーム (_data) と結合して返す ---
-        predictions_final = _data.copy()
-        if predictions_final.index.equals(predictions_result.index):
-             predictions_final['prediction_label'] = predictions_result['prediction_label']
-        else:
-             st.warning("予測結果と元のデータのインデックスが一致しません。インデックスに基づいてマージします。")
-             predictions_final = pd.merge(
-                 predictions_final,
-                 predictions_result[['prediction_label']],
-                 left_index=True,
-                 right_index=True,
-                 how='left'
-             )
-             if predictions_final['prediction_label'].isnull().any():
-                  st.warning("予測結果のマージ後、一部の行で予測値がNaNになりました。インデックス不一致の可能性があります。")
-
-        # ★★★ 予測結果、補完ログ、NaN行データ(補完前後)を返す ★★★
-        return predictions_final, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation
+                return predictions_final, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation
+            except Exception as pycaret_error:
+                st.error(f"PyCaretでの予測中にもエラーが発生しました: {pycaret_error}")
+                return pd.DataFrame(), imputation_log, nan_rows_before_imputation, nan_rows_after_imputation
 
     except Exception as e:
         st.error(f"予測中にエラーが発生しました: {e}")

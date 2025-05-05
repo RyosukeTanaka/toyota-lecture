@@ -14,10 +14,9 @@ TARGET_VARIABLE = '利用台数累積' # 予測用
 BOOKING_DATE_COLUMN = '予約日' # カウント分析用
 LEAD_TIME_COLUMN = 'リードタイム_計算済'
 
-def render_prediction_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[str], Optional[datetime.date], Optional[Dict[str, Any]], bool]:
+def render_prediction_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[str], Optional[Dict[str, Any]], bool]:
     """予測ページのサイドバーウィジェットを描画し、選択値を返す"""
     selected_car_class: Optional[str] = "全クラス"
-    selected_date: Optional[datetime.date] = None
     selected_model_info: Optional[Dict[str, Any]] = None
     run_prediction: bool = False
 
@@ -27,7 +26,7 @@ def render_prediction_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[str]
     saved_models = list_saved_models()
     if not saved_models:
         st.warning("保存済みモデルが見つかりません。「モデルトレーニング」ページでモデルを作成してください。")
-        return selected_car_class, selected_date, None, False
+        return selected_car_class, None, False
     
     model_names = [model["model_name"] for model in saved_models]
     selected_model_name = st.selectbox(
@@ -39,6 +38,26 @@ def render_prediction_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[str]
     
     # 選択されたモデル情報を取得
     selected_model_info = next((model for model in saved_models if model["model_name"] == selected_model_name), None)
+    
+    # 選択したモデル情報の表示（モデルが選択された時点で表示）
+    if selected_model_info:
+        st.markdown("---")
+        st.subheader("選択したモデル情報")
+        
+        # モデル基本情報
+        st.info(f"モデル名: {selected_model_info['model_name']}")
+        st.info(f"モデルタイプ: {selected_model_info['model_type']}")
+        st.info(f"作成日: {selected_model_info['creation_date']}")
+        
+        # モデル性能指標（存在する場合）
+        if "metrics" in selected_model_info:
+            st.subheader("モデル性能指標")
+            metrics = selected_model_info["metrics"]
+            metrics_cols = st.columns(len(metrics))
+            for i, (metric_name, metric_value) in enumerate(metrics.items()):
+                formatted_value = f"{metric_value:.4f}" if isinstance(metric_value, (int, float)) else metric_value
+                with metrics_cols[i]:
+                    st.metric(metric_name, formatted_value)
     
     # 選択されたモデルの車両クラスに基づいて、車両クラス選択肢をフィルタリング
     if selected_model_info:
@@ -62,56 +81,9 @@ def render_prediction_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[str]
             else:
                 st.warning(f"'{CAR_CLASS_COLUMN}'列が見つかりません。")
                 selected_car_class = "全クラス"
-    
-    # 選択された車両クラスでデータをフィルタリング (日付選択用)
-    if selected_car_class == "全クラス":
-        data_for_date_selection = data
-    else:
-        data_for_date_selection = data[data[CAR_CLASS_COLUMN] == selected_car_class]
 
-    # --- 分析日の選択 ---
-    if DATE_COLUMN in data_for_date_selection.columns and pd.api.types.is_datetime64_any_dtype(data_for_date_selection[DATE_COLUMN]):
-        available_dates = data_for_date_selection[DATE_COLUMN].dt.date.unique()
-        if len(available_dates) > 0:
-            date_options_str = ['日付を選択'] + sorted([d.strftime('%Y-%m-%d') for d in available_dates])
-            selected_date_str = st.selectbox(
-                f"'{DATE_COLUMN}'を選択:",
-                options=date_options_str, index=0, key="pred_date_select"
-            )
-            if selected_date_str != '日付を選択':
-                try:
-                    selected_date = pd.to_datetime(selected_date_str).date()
-                except ValueError:
-                    st.error("選択された日付の形式が無効です。")
-                    selected_date = None # Noneにリセット
-        # else: # データがない場合の情報はメインページで表示するためここでは省略
-        #     st.info(f"'{selected_car_class}'クラスには有効な'{DATE_COLUMN}'データがありません。")
-    else:
-        st.warning(f"'{DATE_COLUMN}'列がないか日付型ではありません。")
-        selected_date = None # Noneにリセット
-
-    # 選択したモデル情報の表示（予測実行ボタンの上）
-    if selected_model_info and selected_date:
-        st.markdown("---")
-        st.subheader("選択したモデル情報")
-        
-        # モデル基本情報
-        st.info(f"モデル名: {selected_model_info['model_name']}")
-        st.info(f"モデルタイプ: {selected_model_info['model_type']}")
-        st.info(f"作成日: {selected_model_info['creation_date']}")
-        
-        # モデル性能指標（存在する場合）
-        if "metrics" in selected_model_info:
-            with st.expander("モデル性能指標"):
-                metrics = selected_model_info["metrics"]
-                for metric_name, metric_value in metrics.items():
-                    formatted_value = f"{metric_value:.4f}" if isinstance(metric_value, (int, float)) else metric_value
-                    st.write(f"{metric_name}: {formatted_value}")
-        
-        # 実行ボタン
-        run_prediction = st.button("🔮 予測実行", key="run_prediction")
-
-    return selected_car_class, selected_date, selected_model_info, run_prediction
+    # 予測実行ボタンはメインエリアでの日付選択後に表示するため、ここでは返さない
+    return selected_car_class, selected_model_info, run_prediction
 
 
 def render_model_training_sidebar_widgets(data: pd.DataFrame, config: Dict[str, Any]) -> Tuple[str, List[str], List[str], List[str], List[str], str, bool]:
