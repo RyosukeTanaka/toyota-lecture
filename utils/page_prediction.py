@@ -168,7 +168,8 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: dict):
                                         else:
                                             st.warning("表示列なし")
 
-                                    predictions = predict_with_model(best_model, data_scenario)
+                                    # ★★★ predict_with_model に target=TARGET_VARIABLE を追加 ★★★
+                                    predictions = predict_with_model(best_model, data_scenario, target=TARGET_VARIABLE)
                                     if not predictions.empty:
                                         # 結果表示
                                         st.markdown("---")

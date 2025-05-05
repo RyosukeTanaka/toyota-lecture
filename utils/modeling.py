@@ -14,8 +14,16 @@ def setup_and_compare_models(_data, target, numeric_features, categorical_featur
     st.info("PyCaretのセットアップを開始します...")
     setup_result = None # 初期化
     try:
+        # ★★★ 追加: ターゲット変数が欠損している行を削除 ★★★
+        original_rows = len(_data)
+        _data_cleaned = _data.dropna(subset=[target]).copy()
+        removed_rows = original_rows - len(_data_cleaned)
+        if removed_rows > 0:
+             st.warning(f"ターゲット変数 '{target}' の欠損値を含む {removed_rows} 行をモデル学習データから除外しました。")
+        # ★★★ ---------------------------------------- ★★★
+
         # html=FalseにしないとStreamlit内で表示がおかしくなることがある
-        setup_result = setup(data=_data, target=target,
+        setup_result = setup(data=_data_cleaned, target=target,
                        numeric_features=numeric_features if numeric_features else None,
                        categorical_features=categorical_features if categorical_features else None,
                        ignore_features=ignore_features if ignore_features else None,
@@ -76,14 +84,25 @@ def setup_and_compare_models(_data, target, numeric_features, categorical_featur
         return None, pd.DataFrame(), setup_result
 
 
-def predict_with_model(model, _data):
-    """与えられたモデルとデータで予測を実行する"""
+def predict_with_model(model, _data, target: str):
+    """与えられたモデル、データ、ターゲット列名で予測を実行する"""
     if model is None or _data.empty:
         st.error("予測に必要なモデルまたはデータがありません。")
         return pd.DataFrame() # 空のDataFrameを返す
     try:
+        # ★★★ 追加: 予測データのターゲット列にNaNがあれば行を削除 ★★★
+        _data_cleaned = _data
+        if target in _data.columns:
+            original_rows = len(_data)
+            _data_cleaned = _data.dropna(subset=[target]).copy()
+            removed_rows = original_rows - len(_data_cleaned)
+            if removed_rows > 0:
+                 st.warning(f"予測データからターゲット変数 '{target}' の欠損値を含む {removed_rows} 行を除外しました。")
+        # ★★★ --------------------------------------------- ★★★
+
         st.info("予測を実行しています...")
-        predictions = predict_model(model, data=_data)
+        # ★★★ predict_model に渡すデータを _data_cleaned に変更 ★★★
+        predictions = predict_model(model, data=_data_cleaned)
         st.success("予測完了！")
         # predict_modelは元のデータに 'prediction_label' 列を追加して返す
         return predictions
