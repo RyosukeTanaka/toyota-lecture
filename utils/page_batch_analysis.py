@@ -149,6 +149,15 @@ def render_batch_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
         st.markdown("---")
         st.header("バッチ分析結果")
         
+        # 選択された日付期間を表示
+        if date_range:
+            min_date = min(date_range)
+            max_date = max(date_range)
+            if min_date == max_date:
+                st.subheader(f"分析期間: {min_date}")
+            else:
+                st.subheader(f"分析期間: {min_date} 〜 {max_date}")
+        
         with st.spinner('バッチ処理を実行中...'):
             # モデルのロード
             model = load_model(selected_model_info["path"])
