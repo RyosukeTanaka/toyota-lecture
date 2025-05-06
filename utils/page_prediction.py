@@ -15,7 +15,7 @@ from .data_processing import ( # 相対インポートに変更
 )
 from .visualization import ( # 相対インポートに変更
     plot_booking_curve, plot_price_trends, plot_comparison_curve,
-    plot_feature_importance
+    plot_feature_importance, plot_full_period_comparison
 )
 from .modeling import ( # 相対インポートに変更
     setup_and_compare_models, predict_with_model, get_feature_importance_df
@@ -25,6 +25,7 @@ from .ui_components import ( # 相対インポートに変更
 )
 from .model_storage import load_model, list_saved_models, load_comparison_results, get_model_metadata, prepare_features_for_prediction
 import numpy as np
+from .revenue_analysis import calculate_revenue_difference, plot_revenue_comparison
 
 # --- 予測・比較分析ページ描画関数 ---
 def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
@@ -303,98 +304,116 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                                         
                                         # 比較グラフと表を表示
                                         st.markdown("---")
-                                        st.subheader(f"実績 vs 予測比較 ({scenario_title_suffix}) - LT {last_change_lt} 以降")
+                                        st.subheader(f"実績 vs 予測比較 ({scenario_title_suffix})")
                                         
                                         actual_filtered_display = data_filtered_sorted[data_filtered_sorted[LEAD_TIME_COLUMN] <= last_change_lt]
                                         predictions_filtered_display = predictions_result[predictions_result[LEAD_TIME_COLUMN] <= last_change_lt]
                                         
                                         if not actual_filtered_display.empty and not predictions_filtered_display.empty:
-                                            fig_compare = plot_comparison_curve(
-                                                df_actual=actual_filtered_display, 
-                                                df_predicted=predictions_filtered_display,
-                                                x_col=LEAD_TIME_COLUMN, 
-                                                y_actual_col=TARGET_VARIABLE, 
-                                                y_pred_col='prediction_label',
-                                                title=f"{selected_date} {selected_car_class} 実績 vs 予測 (LT {last_change_lt} 以降)"
-                                            )
-                                            st.plotly_chart(fig_compare, use_container_width=True)
+                                            # タブを作成
+                                            compare_tab1, compare_tab2 = st.tabs(["価格変更後のみ表示", "全期間比較表示"])
                                             
-                                            st.subheader(f"実績 vs 予測 データテーブル (LT {last_change_lt} 以降)")
-                                            df_actual_for_table = actual_filtered_display[[LEAD_TIME_COLUMN, TARGET_VARIABLE]].rename(columns={TARGET_VARIABLE: '実績利用台数'})
-                                            df_pred_for_table = predictions_filtered_display[[LEAD_TIME_COLUMN, 'prediction_label']].rename(columns={'prediction_label': '予測利用台数'})
-                                            df_comparison_table = pd.merge(df_actual_for_table, df_pred_for_table, on=LEAD_TIME_COLUMN, how='inner')
-                                            st.dataframe(df_comparison_table.sort_values(by=LEAD_TIME_COLUMN).reset_index(drop=True))
+                                            with compare_tab1:
+                                                # 価格変更後のみの比較グラフ
+                                                fig_compare = plot_comparison_curve(
+                                                    df_actual=actual_filtered_display, 
+                                                    df_predicted=predictions_filtered_display,
+                                                    x_col=LEAD_TIME_COLUMN, 
+                                                    y_actual_col=TARGET_VARIABLE, 
+                                                    y_pred_col='prediction_label',
+                                                    title=f"{selected_date} {selected_car_class} 実績 vs 予測 (LT {last_change_lt} 以降)"
+                                                )
+                                                st.plotly_chart(fig_compare, use_container_width=True)
+                                                
+                                                st.subheader(f"実績 vs 予測 データテーブル (LT {last_change_lt} 以降)")
+                                                df_actual_for_table = actual_filtered_display[[LEAD_TIME_COLUMN, TARGET_VARIABLE]].rename(columns={TARGET_VARIABLE: '実績利用台数'})
+                                                df_pred_for_table = predictions_filtered_display[[LEAD_TIME_COLUMN, 'prediction_label']].rename(columns={'prediction_label': '予測利用台数'})
+                                                df_comparison_table = pd.merge(df_actual_for_table, df_pred_for_table, on=LEAD_TIME_COLUMN, how='inner')
+                                                st.dataframe(df_comparison_table.sort_values(by=LEAD_TIME_COLUMN).reset_index(drop=True))
+                                            
+                                            with compare_tab2:
+                                                # 全期間の比較グラフ
+                                                # データがフル期間について揃っているか確認
+                                                if LEAD_TIME_COLUMN not in predictions_result.columns:
+                                                    predictions_full = pd.merge(predictions_result, data_scenario[[LEAD_TIME_COLUMN]], left_index=True, right_index=True, how='left')
+                                                else:
+                                                    predictions_full = predictions_result
+                                                
+                                                fig_full_compare = plot_full_period_comparison(
+                                                    df_actual=data_filtered_sorted,
+                                                    df_predicted=predictions_full,
+                                                    x_col=LEAD_TIME_COLUMN,
+                                                    y_actual_col=TARGET_VARIABLE,
+                                                    y_pred_col='prediction_label',
+                                                    title=f"{selected_date} {selected_car_class} 実績 vs 予測 (全期間)",
+                                                    change_lead_time=last_change_lt
+                                                )
+                                                st.plotly_chart(fig_full_compare, use_container_width=True)
+                                                
+                                                st.info("全期間の予約曲線を表示しています。緑色の縦線は価格最終変更点を示しています。")
+                                                st.markdown("**注意**: 価格変更点より前（右側）は実際の価格変動に基づく実績データですが、予測は価格固定シナリオに基づいています。")
                                         else:
-                                            st.warning(f"LT {last_change_lt} 以降の表示データがありません")
-                                    else:
-                                        st.error("すべての予測方法が失敗しました")
-                                
+                                            st.warning(f"LT {last_change_lt} 以降の表示データなし")
+                                            
+                                        # 売上比較分析
+                                        st.markdown("---")
+                                        st.subheader("売上金額ベースでの比較分析")
+                                        
+                                        # 売上差額の計算
+                                        st.info("価格変更がもたらした売上への影響を分析しています...")
+                                        revenue_df, total_actual, total_predicted, total_difference = calculate_revenue_difference(
+                                            df_actual=data_filtered_sorted,
+                                            df_predicted=predictions_result,
+                                            lead_time_col=LEAD_TIME_COLUMN,
+                                            actual_usage_col=TARGET_VARIABLE,
+                                            pred_usage_col='prediction_label',
+                                            price_col=PRICE_COLUMNS[0], # 価格_トヨタを使用
+                                            change_lead_time=last_change_lt
+                                        )
+                                        
+                                        if not revenue_df.empty:
+                                            # 売上差額メトリクス表示
+                                            col1, col2, col3 = st.columns(3)
+                                            with col1:
+                                                st.metric("実績総売上", f"{int(total_actual):,}円")
+                                            with col2:
+                                                st.metric("予測総売上（価格固定）", f"{int(total_predicted):,}円")
+                                            with col3:
+                                                delta_color = "normal" if total_difference >= 0 else "inverse"
+                                                st.metric("売上差額（実績-予測）", f"{int(total_difference):,}円", delta=f"{int(total_difference):,}円", delta_color=delta_color)
+                                            
+                                            # 売上推移グラフ
+                                            st.subheader("売上金額推移")
+                                            fig_revenue = plot_revenue_comparison(
+                                                revenue_df=revenue_df,
+                                                lead_time_col=LEAD_TIME_COLUMN,
+                                                title=f"{selected_date} {selected_car_class} 売上金額比較 (LT {last_change_lt} 以降)"
+                                            )
+                                            st.plotly_chart(fig_revenue, use_container_width=True)
+                                            
+                                            # 売上詳細テーブル
+                                            with st.expander("売上計算詳細データ"):
+                                                st.dataframe(revenue_df.sort_values(by=LEAD_TIME_COLUMN, ascending=False))
+                                                # CSVダウンロード機能
+                                                csv = revenue_df.to_csv(index=False).encode('utf-8')
+                                                filename = f"revenue_analysis_{selected_date}_{selected_car_class}.csv"
+                                                st.download_button("💾 売上分析データをダウンロード", csv, filename, "text/csv")
+                                            
+                                            # 結果の解釈
+                                            if total_difference > 0:
+                                                st.success(f"**分析結果**: 価格変更により **{int(total_difference):,}円** の追加売上が発生したと推定されます。価格戦略が有効に機能しています。")
+                                            elif total_difference < 0:
+                                                st.warning(f"**分析結果**: 価格変更により **{abs(int(total_difference)):,}円** の売上減少があったと推定されます。価格戦略の見直しが必要かもしれません。")
+                                            else:
+                                                st.info("**分析結果**: 価格変更による売上への顕著な影響は見られませんでした。")
+                                        else:
+                                            st.warning("売上計算に必要なデータが不足しているため、売上分析を表示できません。")
                                 except Exception as e:
                                     st.error(f"予測処理中にエラー: {e}")
                                     
                                     # 従来の方法をエクスパンダーに移動
                                     with st.expander("フォールバック予測方法の詳細ログ", expanded=False):
                                         st.warning("フォールバック予測方法を試行します...")
-                                        # 従来の方法を試みる
-                                        if model_metadata and "model_columns" in model_metadata:
-                                            # 特徴量変換を適用
-                                            st.info("予測データを学習時の特徴量形式に変換します...")
-                                            data_for_prediction = prepare_features_for_prediction(data_scenario, model_metadata)
-                                            # 予測実行
-                                            predictions, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation = predict_with_model(model, data_for_prediction, target=TARGET_VARIABLE)
-                                        else:
-                                            # 特徴量変換なしで予測を試行
-                                            st.warning("特徴量情報がないため、特徴量変換なしで予測を試行します。エラーが発生する可能性があります。")
-                                            predictions, imputation_log, nan_rows_before_imputation, nan_rows_after_imputation = predict_with_model(model, data_scenario, target=TARGET_VARIABLE)
-
-                                    # 補完ログがあればテーブルで表示
-                                    if imputation_log:
-                                        st.subheader("予測前の特徴量欠損値補完の詳細")
-                                        log_df = pd.DataFrame(imputation_log)
-                                        if 'Imputation Value' in log_df.columns:
-                                             log_df['Imputation Value'] = log_df['Imputation Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
-                                        st.dataframe(log_df)
-                                            
-                                        if nan_rows_before_imputation is not None and not nan_rows_before_imputation.empty:
-                                            st.subheader("NaN値が含まれていた行（補完前）")
-                                            st.dataframe(nan_rows_before_imputation)
-                                            
-                                        if nan_rows_after_imputation is not None and not nan_rows_after_imputation.empty:
-                                            st.subheader("NaN値が含まれていた行（補完後）")
-                                            st.dataframe(nan_rows_after_imputation)
-
-                                    # フォールバック結果の表示
-                                    if 'predictions' in locals() and not predictions.empty:
-                                        st.success("フォールバック予測が成功しました！")
-                                        # 結果表示
-                                        st.markdown("---")
-                                        
-                                        # 実績 vs 予測の比較グラフと表
-                                        st.subheader(f"実績 vs 予測比較 ({scenario_title_suffix}) - LT {last_change_lt} 以降")
-                                        actual_filtered_display = data_filtered_sorted[data_filtered_sorted[LEAD_TIME_COLUMN] <= last_change_lt]
-                                        if LEAD_TIME_COLUMN not in predictions.columns:
-                                            predictions_with_lt = pd.merge(predictions, data_scenario[[LEAD_TIME_COLUMN]], left_index=True, right_index=True, how='left')
-                                        else:
-                                            predictions_with_lt = predictions
-                                        predictions_filtered_display = predictions_with_lt[predictions_with_lt[LEAD_TIME_COLUMN] <= last_change_lt]
-
-                                        if not actual_filtered_display.empty and not predictions_filtered_display.empty:
-                                            fig_compare = plot_comparison_curve(
-                                                df_actual=actual_filtered_display, df_predicted=predictions_filtered_display,
-                                                x_col=LEAD_TIME_COLUMN, y_actual_col=TARGET_VARIABLE, y_pred_col='prediction_label',
-                                                title=f"{selected_date} {selected_car_class} 実績 vs 予測 (LT {last_change_lt} 以降)"
-                                            )
-                                            st.plotly_chart(fig_compare, use_container_width=True)
-
-                                            st.subheader(f"実績 vs 予測 データテーブル (LT {last_change_lt} 以降)")
-                                            df_actual_for_table = actual_filtered_display[[LEAD_TIME_COLUMN, TARGET_VARIABLE]].rename(columns={TARGET_VARIABLE: '実績利用台数'})
-                                            df_pred_for_table = predictions_filtered_display[[LEAD_TIME_COLUMN, 'prediction_label']].rename(columns={'prediction_label': '予測利用台数'})
-                                            df_comparison_table = pd.merge(df_actual_for_table, df_pred_for_table, on=LEAD_TIME_COLUMN, how='inner')
-                                            st.dataframe(df_comparison_table.sort_values(by=LEAD_TIME_COLUMN).reset_index(drop=True))
-                                        else:
-                                            st.warning(f"LT {last_change_lt} 以降の表示データなし")
-                                    else:
-                                        st.error("すべての予測方法が失敗しました")
                             else:
                                 st.error("シナリオデータ作成失敗")
                         else:
@@ -406,4 +425,6 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
     elif selected_date is None:
         # 日付選択フィールドの存在確認
         if DATE_COLUMN in data.columns and pd.api.types.is_datetime64_any_dtype(data[DATE_COLUMN]) and not data[DATE_COLUMN].isnull().all():
-             st.info("分析結果を表示するには、利用日を選択してください。") 
+             st.info("分析結果を表示するには、利用日を選択してください。")
+        else:
+            st.warning("日付選択に問題があります。") 

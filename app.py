@@ -33,6 +33,7 @@ from utils.constants import (
 from utils.page_prediction import render_prediction_analysis_page # 予測ページ関数
 from utils.page_analysis import render_data_analysis_page     # 分析ページ関数
 from utils.page_model_training import render_model_training_page # 新しく追加したモデルトレーニングページ関数
+from utils.page_batch_analysis import render_batch_analysis_page # バッチ分析ページ関数
 from utils.model_storage import ensure_model_directory # モデル保存ディレクトリ確保
 
 # --- 定数 ---
@@ -79,7 +80,7 @@ def main():
         st.title("分析メニュー")
         app_mode = st.radio(
             "実行したい分析を選択してください:",
-            ("モデルトレーニング", "予測分析", "データ分析・修正"),
+            ("モデルトレーニング", "予測分析", "データ分析・修正", "バッチ分析"),
             key="app_mode_select"
         )
         st.markdown("---")
@@ -138,6 +139,8 @@ def main():
             render_prediction_analysis_page(current_data, config)  # 更新したページ
         elif app_mode == "データ分析・修正":
             render_data_analysis_page(current_data)           # 既存のままのページ
+        elif app_mode == "バッチ分析":
+            render_batch_analysis_page(current_data, config)           # 新しく追加したページ
         else:
             st.error("無効なモードが選択されました。")
     elif uploaded_file is None:

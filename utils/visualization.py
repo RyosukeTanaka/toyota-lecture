@@ -106,4 +106,214 @@ def plot_feature_importance(df_importance):
         return fig
     except Exception as e:
         st.error(f"特徴量重要度グラフの作成中にエラー: {e}")
-        return None 
+        return None
+
+def plot_full_period_comparison(df_actual, df_predicted, x_col, y_actual_col, y_pred_col, title=None, change_lead_time=None):
+    """リードタイム全期間での実績vs予測比較グラフを生成"""
+    required_cols_actual = [x_col, y_actual_col]
+    required_cols_predicted = [x_col, y_pred_col]
+
+    missing_actual = [col for col in required_cols_actual if col not in df_actual.columns]
+    missing_predicted = [col for col in required_cols_predicted if col not in df_predicted.columns]
+
+    if missing_actual or missing_predicted:
+        missing = list(set(missing_actual + missing_predicted))
+        st.error(f"エラー: 全期間比較グラフ描画に必要な列 ('{', '.join(missing)}') がデータフレームに存在しません。")
+        return go.Figure()
+    
+    try:
+        fig = go.Figure()
+        
+        # 実績データプロット
+        fig.add_trace(go.Scatter(
+            x=df_actual[x_col],
+            y=df_actual[y_actual_col],
+            mode='lines+markers',
+            name='実績値',
+            line=dict(color='rgba(0, 123, 255, 0.8)', width=2),
+            marker=dict(size=6)
+        ))
+        
+        # 予測データプロット
+        fig.add_trace(go.Scatter(
+            x=df_predicted[x_col],
+            y=df_predicted[y_pred_col],
+            mode='lines+markers',
+            name='予測値（価格固定シナリオ）',
+            line=dict(color='rgba(220, 53, 69, 0.8)', width=2),
+            marker=dict(size=6)
+        ))
+        
+        # 価格変更点の表示
+        if change_lead_time is not None:
+            fig.add_vline(
+                x=change_lead_time, 
+                line_dash="dash", 
+                line_color="rgba(40, 167, 69, 0.5)",
+                annotation_text=f"価格最終変更点 (LT={change_lead_time})",
+                annotation_position="bottom right"
+            )
+        
+        # グラフレイアウト設定
+        fig.update_layout(
+            title=title or "全期間での実績 vs 予測比較",
+            xaxis_title='利用日までの日数（0が当日）',
+            yaxis_title='利用台数累積',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(l=20, r=20, t=60, b=20),
+            hovermode="x unified",
+            xaxis_autorange='reversed'
+        )
+        
+        return fig
+    except Exception as e:
+        st.error(f"全期間比較グラフの描画中にエラーが発生しました: {e}")
+        return go.Figure()
+
+def plot_batch_revenue_comparison(
+    df: pd.DataFrame, 
+    x_col: str,
+    horizontal: bool = False,
+    title: str = "売上比較分析"
+) -> go.Figure:
+    """バッチ処理結果の売上比較グラフを描画する
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        集計済みの売上データフレーム（実績売上、予測売上、売上差額の列が必要）
+    x_col : str
+        x軸に使用する列名（利用日や車両クラスなど）
+    horizontal : bool, default=False
+        横向きのグラフにするかどうか
+    title : str, default="売上比較分析"
+        グラフのタイトル
+
+    Returns
+    -------
+    go.Figure
+        Plotlyのグラフオブジェクト
+    """
+    if df.empty or x_col not in df.columns:
+        st.error(f"グラフ描画に必要なデータが不足しています。")
+        return go.Figure()
+    
+    try:
+        # 差額の絶対値の最大値を計算
+        max_diff = df["売上差額"].abs().max()
+        
+        # 値のフォーマット関数
+        def format_value(val):
+            return f"{int(val):,}円"
+            
+        if horizontal:
+            # 横向きのバーチャート（x/y軸を入れ替え）
+            fig = go.Figure()
+            
+            # 実績売上バー
+            fig.add_trace(go.Bar(
+                y=df[x_col],
+                x=df["実績売上"],
+                name="実績売上",
+                orientation="h",
+                marker_color="rgba(55, 128, 191, 0.7)",
+                text=[format_value(val) for val in df["実績売上"]],
+                textposition="auto"
+            ))
+            
+            # 予測売上バー
+            fig.add_trace(go.Bar(
+                y=df[x_col],
+                x=df["予測売上"],
+                name="予測売上（価格固定）",
+                orientation="h",
+                marker_color="rgba(219, 64, 82, 0.7)",
+                text=[format_value(val) for val in df["予測売上"]],
+                textposition="auto"
+            ))
+            
+            # 差額マーカー
+            fig.add_trace(go.Scatter(
+                y=df[x_col],
+                x=df["売上差額"],
+                name="売上差額",
+                mode="markers+text",
+                marker=dict(
+                    symbol="diamond",
+                    size=12,
+                    color=["green" if v >= 0 else "red" for v in df["売上差額"]],
+                    line=dict(width=2, color="DarkSlateGrey")
+                ),
+                text=[format_value(val) for val in df["売上差額"]],
+                textposition="middle right"
+            ))
+            
+            # レイアウト
+            fig.update_layout(
+                title=title,
+                xaxis_title="売上金額",
+                yaxis_title=x_col,
+                barmode="group",
+                height=max(400, 100 + 50*len(df)),  # 項目数に応じて高さを調整
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=20, r=20, t=60, b=20)
+            )
+        else:
+            # 縦向きのバーチャート
+            fig = go.Figure()
+            
+            # 実績売上バー
+            fig.add_trace(go.Bar(
+                x=df[x_col],
+                y=df["実績売上"],
+                name="実績売上",
+                marker_color="rgba(55, 128, 191, 0.7)",
+                text=[format_value(val) for val in df["実績売上"]],
+                textposition="auto"
+            ))
+            
+            # 予測売上バー
+            fig.add_trace(go.Bar(
+                x=df[x_col],
+                y=df["予測売上"],
+                name="予測売上（価格固定）",
+                marker_color="rgba(219, 64, 82, 0.7)",
+                text=[format_value(val) for val in df["予測売上"]],
+                textposition="auto"
+            ))
+            
+            # 差額マーカー
+            fig.add_trace(go.Scatter(
+                x=df[x_col],
+                y=df["売上差額"],
+                name="売上差額",
+                mode="markers+text",
+                marker=dict(
+                    symbol="diamond",
+                    size=12,
+                    color=["green" if v >= 0 else "red" for v in df["売上差額"]],
+                    line=dict(width=2, color="DarkSlateGrey")
+                ),
+                text=[format_value(val) for val in df["売上差額"]],
+                textposition="top center"
+            ))
+            
+            # レイアウト
+            fig.update_layout(
+                title=title,
+                xaxis_title=x_col,
+                yaxis_title="売上金額",
+                barmode="group",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=20, r=20, t=60, b=20)
+            )
+        
+        # X軸日付なら適切な表示形式を設定
+        if x_col == "利用日" and not horizontal:
+            fig.update_xaxes(type="date", tickformat="%Y-%m-%d")
+        
+        return fig
+        
+    except Exception as e:
+        st.error(f"バッチ結果グラフの描画中にエラー: {e}")
+        return go.Figure() 
