@@ -12,22 +12,29 @@ def calculate_daily_change(df: pd.DataFrame, cumulative_col: str) -> pd.Series:
     Parameters:
     -----------
     df: pd.DataFrame
-        累積値を含むデータフレーム
+        累積値を含むデータフレーム（リードタイム降順でソート済み）
     cumulative_col: str
         累積値の列名
         
     Returns:
     --------
-    pd.Series: 日次変化量。初日はその日の累積値そのもの、以降は前日との差分
+    pd.Series: 日次変化量。時間の流れに沿った新規予約数（正の値が増加）
     """
     if df.empty or cumulative_col not in df.columns:
         st.warning(f"日次変化量計算: データが空または列 '{cumulative_col}' が見つかりません。")
         return pd.Series(dtype='float64')
     
+    # データがリードタイム降順（大→小）にソートされている前提
+    # 時間の流れに沿った差分を計算するため、後の時点（リードタイム小）- 前の時点（リードタイム大）
     daily_change = df[cumulative_col].copy()
-    # 初日はそのままの値、2日目以降は差分
+    
+    # 初日（リードタイム最大）はそのままの値
     if len(daily_change) > 1:
-        daily_change.iloc[1:] = daily_change.iloc[1:].values - daily_change.iloc[:-1].values
+        # 時間の流れに沿った差分計算（隣接する行の差分）
+        # 注意: リードタイム降順なので、現在の値 - 一つ前（リードタイム大きい）の値
+        original_values = daily_change.values.copy()
+        for i in range(1, len(daily_change)):
+            daily_change.iloc[i] = original_values[i] - original_values[i-1]
     
     return daily_change
 
@@ -85,9 +92,9 @@ def calculate_revenue_difference(
         # 結果格納用のDataFrame
         result_df = pd.DataFrame()
         
-        # リードタイムで並べ替え
-        df_actual_sorted = df_actual.sort_values(by=lead_time_col)
-        df_pred_sorted = df_predicted.sort_values(by=lead_time_col)
+        # リードタイムで並べ替え（降順: 大きい方から小さい方へ）
+        df_actual_sorted = df_actual.sort_values(by=lead_time_col, ascending=False)
+        df_pred_sorted = df_predicted.sort_values(by=lead_time_col, ascending=False)
         
         # 価格変更点以降のデータに絞る
         df_actual_filtered = df_actual_sorted[df_actual_sorted[lead_time_col] <= change_lead_time]
@@ -101,7 +108,7 @@ def calculate_revenue_difference(
         # 各リードタイムにおける新規予約数の計算（差分）
         result_df[lead_time_col] = df_actual_filtered[lead_time_col]
         
-        # 日次変化量の計算（当日 - 前日）、初日は累積値そのもの
+        # 日次変化量の計算（時間の流れに沿った差分）
         result_df['actual_new_bookings'] = calculate_daily_change(df_actual_filtered, actual_usage_col)
         result_df['pred_new_bookings'] = calculate_daily_change(df_pred_filtered, pred_usage_col)
         
