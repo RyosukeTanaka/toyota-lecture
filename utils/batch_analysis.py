@@ -23,10 +23,10 @@ from .visualization import plot_batch_revenue_comparison
 
 def batch_predict_date(
     data: pd.DataFrame,
-    model,
+    models: Dict[str, Any],  # モデル辞書（車両クラス→モデル）
     date: datetime.date,
     car_class: str,
-    model_metadata: Optional[Dict] = None
+    models_metadata: Optional[Dict[str, Dict]] = None  # モデルメタデータ辞書（車両クラス→メタデータ）
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """単一の日付とクラスの組み合わせに対して予測を実行する
 
@@ -34,14 +34,14 @@ def batch_predict_date(
     ----------
     data : pd.DataFrame
         元データフレーム
-    model
-        予測モデル
+    models : Dict[str, Any]
+        予測モデル辞書（車両クラス→モデル）
     date : datetime.date
         予測する利用日
     car_class : str
         車両クラス
-    model_metadata : Optional[Dict], default=None
-        モデルのメタデータ（特徴量情報）
+    models_metadata : Optional[Dict[str, Dict]], default=None
+        モデルのメタデータ辞書（車両クラス→メタデータ）
 
     Returns
     -------
@@ -56,10 +56,30 @@ def batch_predict_date(
         "last_change_lt": None,
         "revenue_actual": 0,
         "revenue_predicted": 0,
-        "revenue_difference": 0
+        "revenue_difference": 0,
+        "model_name": "不明"  # 使用したモデル名を記録
     }
     
     try:
+        # 使用するモデルとメタデータを決定
+        if car_class in models:
+            # 車両クラス専用モデルがある場合はそれを使用
+            model = models[car_class]
+            model_metadata = models_metadata.get(car_class) if models_metadata else None
+            # モデル名を記録
+            if models_metadata and car_class in models_metadata and models_metadata[car_class]:
+                result_meta["model_name"] = models_metadata[car_class].get("model_name", "不明")
+        elif "全クラス" in models:
+            # 全クラス用モデルをフォールバックとして使用
+            model = models["全クラス"]
+            model_metadata = models_metadata.get("全クラス") if models_metadata else None
+            # モデル名を記録
+            if models_metadata and "全クラス" in models_metadata and models_metadata["全クラス"]:
+                result_meta["model_name"] = models_metadata["全クラス"].get("model_name", "不明") + " (全クラス)"
+        else:
+            result_meta["error"] = f"{car_class}用のモデルが見つかりません"
+            return pd.DataFrame(), result_meta
+        
         # 指定された日付・車両クラスでデータをフィルタリング
         data_filtered = filter_data_by_date(
             data[data[CAR_CLASS_COLUMN] == car_class] if car_class != "全クラス" else data,
@@ -104,7 +124,7 @@ def batch_predict_date(
         # カテゴリ変数の処理
         object_cols = scen_data_transformed.select_dtypes(include=['object']).columns
         for col in object_cols:
-            if col in model_metadata.get("model_columns", []):
+            if model_metadata and "model_columns" in model_metadata and col in model_metadata.get("model_columns", []):
                 # カテゴリ変数をワンホットエンコーディングする必要がある場合は
                 # prepare_features_for_predictionに任せる
                 continue
@@ -124,7 +144,7 @@ def batch_predict_date(
         # 1. 特徴量変換を適用して予測を試行（優先）
         try:
             if model_metadata and "model_columns" in model_metadata:
-                st.info(f"{date} {car_class}の特徴量変換を適用...")
+                st.info(f"{date} {car_class}の特徴量変換を適用...（モデル: {result_meta['model_name']}）")
                 try:
                     # モデルのカラム情報を取得
                     model_feature_names = model_metadata.get("model_columns", [])
@@ -163,17 +183,61 @@ def batch_predict_date(
                         for col in cat_cols:
                             transformed_data[col] = pd.factorize(transformed_data[col])[0]
                     
+                    # NaN値のチェックと処理
+                    nan_cols = transformed_data.columns[transformed_data.isna().any()].tolist()
+                    if nan_cols:
+                        st.warning(f"予測データに欠損値(NaN)が含まれています。欠損値を処理します: {nan_cols}")
+                        
+                        # 欠損値を含む行数をカウント
+                        nan_rows_count = transformed_data.isna().any(axis=1).sum()
+                        st.info(f"欠損値を含む行数: {nan_rows_count}行 (全{len(transformed_data)}行中)")
+                        
+                        # 数値型の欠損値は平均値で埋める
+                        numeric_cols = transformed_data.select_dtypes(include=['number']).columns
+                        nan_numeric_cols = [col for col in nan_cols if col in numeric_cols]
+                        if nan_numeric_cols:
+                            # 各列ごとに平均値を計算（NaNは除く）
+                            for col in nan_numeric_cols:
+                                col_mean = transformed_data[col].mean()
+                                transformed_data[col].fillna(col_mean, inplace=True)
+                                st.info(f"数値列 '{col}' の欠損値を平均値 {col_mean:.4f} で補完しました")
+                        
+                        # 残りの列（カテゴリや計算不能な列）は0で埋める
+                        remaining_nan_cols = transformed_data.columns[transformed_data.isna().any()].tolist()
+                        if remaining_nan_cols:
+                            for col in remaining_nan_cols:
+                                transformed_data[col].fillna(0, inplace=True)
+                                st.info(f"列 '{col}' の欠損値を 0 で補完しました")
+                        
+                        # 最終確認 - すべてのNaNが処理されたか
+                        if transformed_data.isna().any().any():
+                            remaining_nan_cols = transformed_data.columns[transformed_data.isna().any()].tolist()
+                            st.error(f"まだ欠損値が残っています: {remaining_nan_cols}")
+                            # 最終手段としてすべての残りのNaNを0に変換
+                            transformed_data.fillna(0, inplace=True)
+                        else:
+                            st.success("すべての欠損値を処理しました")
+                    
                     y_pred = model.predict(transformed_data)
                     
                 except Exception as transform_error:
                     st.error(f"特徴量変換中にエラー: {transform_error}")
                     raise transform_error  # 次の方法を試すためにエラーを再度発生させる
             else:
-                # model_metadataがない場合、object型の列を削除して直接予測を試みる
+                # モデルに直接渡す場合はobject型の列を削除
                 st.warning(f"{date} {car_class}のモデルメタデータがないため、直接予測を試みます。")
                 numeric_cols = X.select_dtypes(include=['number', 'bool']).columns
                 X_numeric = X[numeric_cols]
                 st.warning(f"数値型の列のみを使用します: {list(numeric_cols)}")
+                
+                # 欠損値のチェックと処理
+                nan_cols = X_numeric.columns[X_numeric.isna().any()].tolist()
+                if nan_cols:
+                    st.warning(f"最終フォールバック: データに欠損値(NaN)が含まれています: {nan_cols}")
+                    # すべての欠損値を0で埋める（シンプルに処理）
+                    X_numeric.fillna(0, inplace=True)
+                    st.info(f"すべての欠損値を0で補完しました")
+                
                 y_pred = model.predict(X_numeric)
         except Exception as e1:
             # 2. 直接予測を試行（フォールバック）
@@ -205,6 +269,27 @@ def batch_predict_date(
                             # 正しい順序に並べ替え
                             X_selected = X_selected[model_features]
                             st.warning(f"選択した特徴量: {X_selected.columns.tolist()}")
+                            
+                            # 欠損値のチェックと処理
+                            nan_cols = X_selected.columns[X_selected.isna().any()].tolist()
+                            if nan_cols:
+                                st.warning(f"フォールバック処理: 特徴量データに欠損値(NaN)が含まれています: {nan_cols}")
+                                # 各列ごとに平均値で埋める
+                                for col in nan_cols:
+                                    col_mean = X_selected[col].mean()
+                                    # mean()がNaNを返す場合（すべてNaNなど）は0で埋める
+                                    if pd.isna(col_mean):
+                                        X_selected[col].fillna(0, inplace=True)
+                                        st.info(f"列 '{col}' の欠損値を 0 で補完しました（有効な値がありません）")
+                                    else:
+                                        X_selected[col].fillna(col_mean, inplace=True)
+                                        st.info(f"列 '{col}' の欠損値を平均値 {col_mean:.4f} で補完しました")
+                                
+                                # 最終確認
+                                if X_selected.isna().any().any():
+                                    st.error("欠損値処理後もNaNが残っています。これらを0に置換します。")
+                                    X_selected.fillna(0, inplace=True)
+                            
                             y_pred = model.predict(X_selected)
                         else:
                             # 利用可能な特徴量がない場合はデフォルトに戻る
@@ -217,6 +302,15 @@ def batch_predict_date(
                         numeric_cols = X.select_dtypes(include=['number', 'bool']).columns
                         X_numeric = X[numeric_cols]
                         st.warning(f"数値型の列のみを使用します: {list(numeric_cols)}")
+                        
+                        # 欠損値のチェックと処理
+                        nan_cols = X_numeric.columns[X_numeric.isna().any()].tolist()
+                        if nan_cols:
+                            st.warning(f"最終フォールバック: データに欠損値(NaN)が含まれています: {nan_cols}")
+                            # すべての欠損値を0で埋める（シンプルに処理）
+                            X_numeric.fillna(0, inplace=True)
+                            st.info(f"すべての欠損値を0で補完しました")
+                        
                         y_pred = model.predict(X_numeric)
             except Exception as e2:
                 result_meta["error"] = f"予測に失敗しました: {str(e2)}"
@@ -256,10 +350,10 @@ def batch_predict_date(
 
 def run_batch_prediction(
     data: pd.DataFrame,
-    model,
+    models: Dict[str, Any],  # モデル辞書に変更
     date_range: List[datetime.date],
     car_classes: List[str],
-    model_metadata: Optional[Dict] = None,
+    models_metadata: Optional[Dict[str, Dict]] = None,  # モデルメタデータ辞書に変更
     max_workers: int = 4
 ) -> Tuple[Dict[Tuple[datetime.date, str], pd.DataFrame], List[Dict[str, Any]]]:
     """複数の日付・車両クラス組み合わせに対してバッチ予測を実行
@@ -268,14 +362,14 @@ def run_batch_prediction(
     ----------
     data : pd.DataFrame
         元データフレーム
-    model
-        予測モデル
+    models : Dict[str, Any]
+        車両クラスごとの予測モデル辞書
     date_range : List[datetime.date]
         予測する利用日のリスト
     car_classes : List[str]
         対象車両クラスのリスト
-    model_metadata : Optional[Dict], default=None
-        モデルのメタデータ
+    models_metadata : Optional[Dict[str, Dict]], default=None
+        車両クラスごとのモデルメタデータ辞書
     max_workers : int, default=4
         並列処理ワーカー数
 
@@ -303,7 +397,7 @@ def run_batch_prediction(
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # タスク送信
         future_to_task = {
-            executor.submit(batch_predict_date, data, model, date, car_class, model_metadata): (date, car_class)
+            executor.submit(batch_predict_date, data, models, date, car_class, models_metadata): (date, car_class)
             for date, car_class in tasks
         }
         
@@ -325,7 +419,8 @@ def run_batch_prediction(
                     "date": date,
                     "car_class": car_class,
                     "success": False,
-                    "error": str(e)
+                    "error": str(e),
+                    "model_name": models_metadata.get(car_class, {}).get("model_name", "不明") if models_metadata else "不明"
                 })
     
     # 進捗表示をクリア
@@ -357,7 +452,7 @@ def display_batch_results(metadata_list: List[Dict[str, Any]]):
         st.error("すべての処理が失敗しました")
         st.subheader("失敗詳細")
         error_df = pd.DataFrame([
-            {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "エラー内容": meta.get("error", "不明")}
+            {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "モデル": meta.get("model_name", "不明"), "エラー内容": meta.get("error", "不明")}
             for meta in metadata_list if not meta.get("success", False)
         ])
         st.dataframe(error_df)
@@ -387,6 +482,7 @@ def display_batch_results(metadata_list: List[Dict[str, Any]]):
         {
             "利用日": meta.get("date"),
             "車両クラス": meta.get("car_class"),
+            "使用モデル": meta.get("model_name", "不明"),
             "価格変更リードタイム": meta.get("last_change_lt"),
             "実績売上": int(meta.get("revenue_actual", 0)),
             "予測売上": int(meta.get("revenue_predicted", 0)),
