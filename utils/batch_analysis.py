@@ -448,8 +448,10 @@ def display_batch_results(metadata_list: List[Dict[str, Any]]):
     
     st.metric("処理総数", f"{len(metadata_list)}件", f"成功: {success_count}件, 失敗: {fail_count}件")
     
+    # すべての処理が失敗した場合の処理
     if success_count == 0:
         st.error("すべての処理が失敗しました")
+        # 失敗詳細はここで表示
         st.subheader("失敗詳細")
         error_df = pd.DataFrame([
             {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "モデル": meta.get("model_name", "不明"), "エラー内容": meta.get("error", "不明")}
@@ -457,7 +459,7 @@ def display_batch_results(metadata_list: List[Dict[str, Any]]):
         ])
         st.dataframe(error_df)
         return
-        
+    
     # 成功したデータの集計
     success_data = [meta for meta in metadata_list if meta.get("success", False)]
     
@@ -528,4 +530,14 @@ def display_batch_results(metadata_list: List[Dict[str, Any]]):
     elif total_difference < 0:
         st.warning(f"**全体分析**: 期間全体で価格変更により **{abs(int(total_difference)):,}円** の売上減少があったと推定されます。価格戦略の見直しが必要かもしれません。")
     else:
-        st.info("**全体分析**: 期間全体で価格変更による売上への顕著な影響は見られませんでした。") 
+        st.info("**全体分析**: 期間全体で価格変更による売上への顕著な影響は見られませんでした。")
+        
+    # 失敗詳細をページの最下部に表示
+    if fail_count > 0:
+        st.markdown("---")
+        st.subheader("失敗詳細")
+        error_df = pd.DataFrame([
+            {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "モデル": meta.get("model_name", "不明"), "エラー内容": meta.get("error", "不明")}
+            for meta in metadata_list if not meta.get("success", False)
+        ])
+        st.dataframe(error_df) 
