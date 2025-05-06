@@ -111,9 +111,9 @@ def render_prediction_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[str]
     return selected_car_class, selected_model_info, run_prediction
 
 
-def render_model_training_sidebar_widgets(data: pd.DataFrame, config: Dict[str, Any]) -> Tuple[str, List[str], List[str], List[str], List[str], str, bool]:
+def render_model_training_sidebar_widgets(data: pd.DataFrame, config: Dict[str, Any]) -> Tuple[List[str], List[str], List[str], List[str], List[str], str, bool]:
     """モデルトレーニングページのサイドバーウィジェットを描画し、選択値を返す"""
-    selected_car_class: str = "全クラス"
+    selected_car_classes: List[str] = ["全クラス"]  # リストに変更
     selected_numeric: List[str] = []
     selected_categorical: List[str] = []
     selected_features: List[str] = []
@@ -127,20 +127,43 @@ def render_model_training_sidebar_widgets(data: pd.DataFrame, config: Dict[str, 
     if CAR_CLASS_COLUMN in data.columns:
         available_classes = data[CAR_CLASS_COLUMN].unique()
         class_options = ["全クラス"] + sorted(list(available_classes))
-        selected_car_class = st.selectbox(
-            f"'{CAR_CLASS_COLUMN}'を選択:",
-            options=class_options, index=0, key="train_class_select"
+        # 単一選択から複数選択に変更
+        selected_car_classes = st.multiselect(
+            f"'{CAR_CLASS_COLUMN}'を選択 (複数選択可):",
+            options=class_options, 
+            default=["全クラス"], 
+            key="train_class_select"
         )
+        
+        # 選択がない場合のデフォルト値設定
+        if not selected_car_classes:
+            selected_car_classes = ["全クラス"]
+            st.info("車両クラスが選択されていないため、「全クラス」を使用します。")
+        
+        # 「全クラス」と特定クラスが同時選択された場合の処理
+        if "全クラス" in selected_car_classes and len(selected_car_classes) > 1:
+            st.warning("「全クラス」と個別のクラスが同時に選択されています。「全クラス」を優先します。")
+            selected_car_classes = ["全クラス"]
+            
+        # 複数クラス選択時の説明
+        if len(selected_car_classes) > 1:
+            st.info(f"選択された{len(selected_car_classes)}個の車両クラスそれぞれに対してモデルが作成されます。")
     else:
         st.warning(f"'{CAR_CLASS_COLUMN}'列が見つかりません。")
-        selected_car_class = "全クラス" # 値を確定
+        selected_car_classes = ["全クラス"]  # リストに変更
 
     # --- モデル設定 --- #
     st.markdown("---")
     st.subheader("モデル設定")
     
-    # モデル名入力
-    model_name = st.text_input("保存するモデル名:", key="model_name_input", placeholder="例: XGBoost_車両クラスA_20230401")
+    # モデル名入力（複数クラス対応の説明を追加）
+    model_name_help = "複数の車両クラスを選択した場合、各クラス名が自動的に追加されます（例: 入力名_クラスA）"
+    model_name = st.text_input(
+        "保存するモデル名:", 
+        key="model_name_input", 
+        placeholder="例: XGBoost_20230401",
+        help=model_name_help
+    )
     
     # 予測に直接使わない可能性のある列を除外
     potential_features = [col for col in data.columns if col not in [
@@ -193,10 +216,14 @@ def render_model_training_sidebar_widgets(data: pd.DataFrame, config: Dict[str, 
         "評価したいモデル:", available_models, default=valid_default_models, key="train_models"
     )
 
-    # 実行ボタン
-    run_training = st.button("🧠 モデルトレーニング実行", key="run_training")
+    # 実行ボタン（複数モデル作成の場合は説明を追加）
+    button_text = "🧠 モデルトレーニング実行"
+    if len(selected_car_classes) > 1:
+        button_text = f"🧠 {len(selected_car_classes)}クラス分のモデルトレーニング実行"
+    
+    run_training = st.button(button_text, key="run_training")
 
-    return selected_car_class, selected_numeric, selected_categorical, selected_features, models_to_compare, model_name, run_training
+    return selected_car_classes, selected_numeric, selected_categorical, selected_features, models_to_compare, model_name, run_training
 
 
 def render_data_analysis_sidebar_widgets(data: pd.DataFrame) -> Tuple[Optional[datetime.date], bool]:

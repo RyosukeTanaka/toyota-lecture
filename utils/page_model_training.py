@@ -2,7 +2,7 @@
 
 import streamlit as st
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, Any, List
 import datetime
 
 from .constants import (
@@ -19,7 +19,7 @@ def render_model_training_page(data: pd.DataFrame, config: Dict[str, Any]):
 
     # --- サイドバーウィジェットの描画と値の取得 ---
     (
-        selected_car_class,
+        selected_car_classes,  # 単一値からリストに変更
         selected_numeric,
         selected_categorical,
         selected_features,
@@ -40,7 +40,7 @@ def render_model_training_page(data: pd.DataFrame, config: Dict[str, Any]):
     
     if saved_models:
         # モデル情報を表示するためのデータフレームを作成
-        display_cols = ["model_name", "model_type", "car_class", "creation_date", "target_variable"]
+        display_cols = ["model_name", "model_type", "car_class", "creation_date", "target_variable", "row_count"]
         # メトリクス列を追加（存在する場合）
         if saved_models[0].get("metrics"):
             metric_keys = saved_models[0]["metrics"].keys()
@@ -54,7 +54,14 @@ def render_model_training_page(data: pd.DataFrame, config: Dict[str, Any]):
         models_display_data = []
         for model in saved_models:
             model_display = {col: model.get(col) for col in display_cols if col in model or col in model.get("metrics", {})}
-            models_display_data.append(model_display)
+            # 行数情報が存在する場合は表示名を変更
+            if "row_count" in model_display:
+                models_display_data.append({
+                    **{k: v for k, v in model_display.items() if k != "row_count"},
+                    "学習データ行数": model_display["row_count"]
+                })
+            else:
+                models_display_data.append(model_display)
         
         models_df = pd.DataFrame(models_display_data)
         st.dataframe(models_df)
@@ -98,127 +105,159 @@ def render_model_training_page(data: pd.DataFrame, config: Dict[str, Any]):
         else:
             st.markdown("---")
             st.subheader("モデルトレーニング実行")
-            with st.spinner('モデルトレーニング中...'):
-                data_for_modeling = data[data[CAR_CLASS_COLUMN] == selected_car_class] if selected_car_class != "全クラス" else data
-
-                with st.expander("モデル学習に使用するデータのプレビュー"):
-                    columns_to_show = selected_features.copy()
-                    if TARGET_VARIABLE not in columns_to_show:
-                        columns_to_show.append(TARGET_VARIABLE)
-                    
-                    existing_columns_to_show = [col for col in columns_to_show if col in data_for_modeling.columns]
-                    if pd.Series(existing_columns_to_show).duplicated().any():
-                        existing_columns_to_show = pd.Series(existing_columns_to_show).drop_duplicates().tolist()
-                    
-                    if existing_columns_to_show:
-                        st.dataframe(data_for_modeling[existing_columns_to_show].head())
-                    else:
-                        st.warning("表示する列が見つかりません。")
-
-                # 無視リスト生成
-                potential_features = [col for col in data.columns if col not in [
-                    TARGET_VARIABLE, DATE_COLUMN, BOOKING_DATE_COLUMN, 
-                    LEAD_TIME_COLUMN, 'リードタイム', USAGE_COUNT_COLUMN
-                ]]
-                all_numeric_cols = data_for_modeling[potential_features].select_dtypes(include=['number']).columns.tolist()
-                all_category_cols = data_for_modeling[potential_features].select_dtypes(exclude=['number', 'datetime', 'timedelta']).columns.tolist()
-                ignored_numeric = list(set(all_numeric_cols) - set(selected_numeric))
-                ignored_categorical = list(set(all_category_cols) - set(selected_categorical))
-                explicitly_ignored = ['曜日_name', 'en_name']
-                final_ignore_features = list(set(ignored_numeric + ignored_categorical + explicitly_ignored))
-
-                # モデル比較
-                best_model, comparison_results, setup_result = setup_and_compare_models(
-                    _data=data_for_modeling, 
-                    target=TARGET_VARIABLE,
-                    numeric_features=selected_numeric, 
-                    categorical_features=selected_categorical,
-                    ignore_features=final_ignore_features, 
-                    include_models=models_to_compare,
-                    sort_metric='RMSE'
-                )
-
-                if best_model is not None and setup_result is not None:
-                    # 特徴量重要度
-                    st.markdown("---")
-                    st.subheader(f"最良モデル ({type(best_model).__name__}) の特徴量重要度")
-                    importance_df = get_feature_importance_df(best_model, setup_result)
-                    if importance_df is not None and not importance_df.empty:
-                        fig_importance = plot_feature_importance(importance_df)
-                        if fig_importance: 
-                            st.plotly_chart(fig_importance, use_container_width=True)
-                        with st.expander("特徴量重要度データ"): 
-                            st.dataframe(importance_df)
-                    else: 
-                        st.info("このモデルでは特徴量重要度を表示できません。")
-                    
-                    # モデル評価結果表示
-                    st.markdown("---")
-                    st.subheader("モデル評価比較結果")
-                    st.dataframe(comparison_results)
-                    
-                    # 最良モデルの主要なメトリクスを抽出
-                    best_model_row = comparison_results.iloc[0]
-                    metrics = {
-                        "MAE": best_model_row.get("MAE", None),
-                        "MSE": best_model_row.get("MSE", None),
-                        "RMSE": best_model_row.get("RMSE", None),
-                        "R2": best_model_row.get("R2", None),
-                        "RMSLE": best_model_row.get("RMSLE", None)
-                    }
-                    
-                    # メトリクスをクリーンアップ（None値を削除）
-                    metrics = {k: v for k, v in metrics.items() if v is not None}
-                    
-                    # モデルの保存
-                    st.markdown("---")
-                    st.subheader("モデルの保存")
-                    
-                    model_type = type(best_model).__name__
-                    
-                    # 学習時の特徴量情報を取得
-                    model_columns = None
-                    try:
-                        # 1. PyCaretのパイプラインから直接取得を試みる
-                        if hasattr(setup_result, 'pipeline') and hasattr(setup_result.pipeline, 'feature_names_in_'):
-                            model_columns = list(setup_result.pipeline.feature_names_in_)
-                        # 2. 前処理後の特徴量名を取得
-                        elif hasattr(setup_result, 'X_train_transformed') and hasattr(setup_result.X_train_transformed, 'columns'):
-                            model_columns = list(setup_result.X_train_transformed.columns)
-                        # 3. get_configメソッドを使用
-                        elif hasattr(setup_result, 'get_config'):
-                            X_train_transformed = setup_result.get_config('X_train_transformed')
-                            if X_train_transformed is not None and hasattr(X_train_transformed, 'columns'):
-                                model_columns = list(X_train_transformed.columns)
-                        
-                        if model_columns:
-                            st.success(f"学習時の特徴量列名 {len(model_columns)} 個を抽出しました")
-                        else:
-                            st.warning("学習時の特徴量列名を抽出できませんでした。予測時の特徴量変換が制限される可能性があります。")
-                    except Exception as e:
-                        st.warning(f"特徴量情報の抽出中にエラーが発生しました: {e}")
-                        st.warning("学習時の特徴量情報が保存されないため、予測時の特徴量変換が制限される可能性があります。")
-                    
-                    # 保存を実行
-                    try:
-                        model_path = save_model(
-                            model=best_model,
-                            model_name=model_name,
-                            model_type=model_type,
-                            target_variable=TARGET_VARIABLE,
-                            selected_features=selected_features,
-                            car_class=selected_car_class,
-                            comparison_results=comparison_results,
-                            metrics=metrics,
-                            model_columns=model_columns,
-                            categorical_features=selected_categorical
-                        )
-                        st.success(f"モデル '{model_name}' を保存しました！")
-                        st.info(f"保存先: {model_path}")
-                    except Exception as e:
-                        st.error(f"モデルの保存中にエラーが発生しました: {e}")
+            
+            # 複数の車両クラスに対応するため、クラスごとにループ処理を行う
+            total_classes = len(selected_car_classes)
+            for class_index, selected_car_class in enumerate(selected_car_classes):
+                # 複数クラスをトレーニングする場合、進捗状況を表示
+                if total_classes > 1:
+                    st.markdown(f"### クラス {class_index + 1}/{total_classes}: {selected_car_class}")
+                    progress_bar = st.progress(0)
+                    progress_bar.progress((class_index) / total_classes)
                 
-                elif best_model is None:
-                    st.error("モデル比較に失敗しました。データやパラメータを確認してください。")
-                else:
-                    st.error("PyCaretセットアップに失敗しました。データやパラメータを確認してください。") 
+                # 車両クラス名をモデル名に追加（複数クラスを処理する場合）
+                current_model_name = model_name
+                if total_classes > 1 and selected_car_class != "全クラス":
+                    current_model_name = f"{model_name}_{selected_car_class}"
+                
+                with st.spinner(f'モデルトレーニング中... ({selected_car_class})'):
+                    # 選択されたクラスでデータをフィルタリング
+                    data_for_modeling = data[data[CAR_CLASS_COLUMN] == selected_car_class] if selected_car_class != "全クラス" else data
+                    
+                    # データ行数を取得
+                    data_row_count = len(data_for_modeling)
+
+                    with st.expander(f"モデル学習に使用するデータのプレビュー ({selected_car_class})", expanded=False):
+                        columns_to_show = selected_features.copy()
+                        if TARGET_VARIABLE not in columns_to_show:
+                            columns_to_show.append(TARGET_VARIABLE)
+                        
+                        existing_columns_to_show = [col for col in columns_to_show if col in data_for_modeling.columns]
+                        if pd.Series(existing_columns_to_show).duplicated().any():
+                            existing_columns_to_show = pd.Series(existing_columns_to_show).drop_duplicates().tolist()
+                        
+                        if existing_columns_to_show:
+                            st.dataframe(data_for_modeling[existing_columns_to_show].head())
+                            st.info(f"データ行数: {data_row_count}行")
+                        else:
+                            st.warning("表示する列が見つかりません。")
+
+                    # 無視リスト生成
+                    potential_features = [col for col in data.columns if col not in [
+                        TARGET_VARIABLE, DATE_COLUMN, BOOKING_DATE_COLUMN, 
+                        LEAD_TIME_COLUMN, 'リードタイム', USAGE_COUNT_COLUMN
+                    ]]
+                    all_numeric_cols = data_for_modeling[potential_features].select_dtypes(include=['number']).columns.tolist()
+                    all_category_cols = data_for_modeling[potential_features].select_dtypes(exclude=['number', 'datetime', 'timedelta']).columns.tolist()
+                    ignored_numeric = list(set(all_numeric_cols) - set(selected_numeric))
+                    ignored_categorical = list(set(all_category_cols) - set(selected_categorical))
+                    explicitly_ignored = ['曜日_name', 'en_name']
+                    final_ignore_features = list(set(ignored_numeric + ignored_categorical + explicitly_ignored))
+
+                    # モデル比較
+                    best_model, comparison_results, setup_result = setup_and_compare_models(
+                        _data=data_for_modeling, 
+                        target=TARGET_VARIABLE,
+                        numeric_features=selected_numeric, 
+                        categorical_features=selected_categorical,
+                        ignore_features=final_ignore_features, 
+                        include_models=models_to_compare,
+                        sort_metric='RMSE'
+                    )
+
+                    if best_model is not None and setup_result is not None:
+                        # 特徴量重要度
+                        st.markdown("---")
+                        st.subheader(f"最良モデル ({type(best_model).__name__}) の特徴量重要度")
+                        importance_df = get_feature_importance_df(best_model, setup_result)
+                        if importance_df is not None and not importance_df.empty:
+                            fig_importance = plot_feature_importance(importance_df)
+                            if fig_importance: 
+                                st.plotly_chart(fig_importance, use_container_width=True)
+                            with st.expander("特徴量重要度データ"): 
+                                st.dataframe(importance_df)
+                        else: 
+                            st.info("このモデルでは特徴量重要度を表示できません。")
+                        
+                        # モデル評価結果表示
+                        st.markdown("---")
+                        st.subheader(f"モデル評価比較結果 ({selected_car_class})")
+                        st.dataframe(comparison_results)
+                        
+                        # 最良モデルの主要なメトリクスを抽出
+                        best_model_row = comparison_results.iloc[0]
+                        metrics = {
+                            "MAE": best_model_row.get("MAE", None),
+                            "MSE": best_model_row.get("MSE", None),
+                            "RMSE": best_model_row.get("RMSE", None),
+                            "R2": best_model_row.get("R2", None),
+                            "RMSLE": best_model_row.get("RMSLE", None)
+                        }
+                        
+                        # メトリクスをクリーンアップ（None値を削除）
+                        metrics = {k: v for k, v in metrics.items() if v is not None}
+                        
+                        # モデルの保存
+                        st.markdown("---")
+                        st.subheader(f"モデルの保存 ({selected_car_class})")
+                        
+                        model_type = type(best_model).__name__
+                        
+                        # 学習時の特徴量情報を取得
+                        model_columns = None
+                        try:
+                            # 1. PyCaretのパイプラインから直接取得を試みる
+                            if hasattr(setup_result, 'pipeline') and hasattr(setup_result.pipeline, 'feature_names_in_'):
+                                model_columns = list(setup_result.pipeline.feature_names_in_)
+                            # 2. 前処理後の特徴量名を取得
+                            elif hasattr(setup_result, 'X_train_transformed') and hasattr(setup_result.X_train_transformed, 'columns'):
+                                model_columns = list(setup_result.X_train_transformed.columns)
+                            # 3. get_configメソッドを使用
+                            elif hasattr(setup_result, 'get_config'):
+                                X_train_transformed = setup_result.get_config('X_train_transformed')
+                                if X_train_transformed is not None and hasattr(X_train_transformed, 'columns'):
+                                    model_columns = list(X_train_transformed.columns)
+                            
+                            if model_columns:
+                                st.success(f"学習時の特徴量列名 {len(model_columns)} 個を抽出しました")
+                            else:
+                                st.warning("学習時の特徴量列名を抽出できませんでした。予測時の特徴量変換が制限される可能性があります。")
+                        except Exception as e:
+                            st.warning(f"特徴量情報の抽出中にエラーが発生しました: {e}")
+                            st.warning("学習時の特徴量情報が保存されないため、予測時の特徴量変換が制限される可能性があります。")
+                        
+                        # 保存を実行
+                        try:
+                            model_path = save_model(
+                                model=best_model,
+                                model_name=current_model_name,  # 車両クラス名が追加された名前を使用
+                                model_type=model_type,
+                                target_variable=TARGET_VARIABLE,
+                                selected_features=selected_features,
+                                car_class=selected_car_class,
+                                comparison_results=comparison_results,
+                                metrics=metrics,
+                                model_columns=model_columns,
+                                categorical_features=selected_categorical,
+                                row_count=data_row_count  # データ行数をメタデータに追加
+                            )
+                            st.success(f"モデル '{current_model_name}' を保存しました！")
+                            st.info(f"保存先: {model_path}")
+                            st.info(f"学習データ行数: {data_row_count}行")
+                        except Exception as e:
+                            st.error(f"モデルの保存中にエラーが発生しました: {e}")
+                    
+                    elif best_model is None:
+                        st.error(f"モデル比較に失敗しました ({selected_car_class})。データやパラメータを確認してください。")
+                    else:
+                        st.error(f"PyCaretセットアップに失敗しました ({selected_car_class})。データやパラメータを確認してください。")
+                
+                # 車両クラスごとの区切り線（最後のクラス以外）
+                if class_index < total_classes - 1:
+                    st.markdown("---")
+                    st.markdown("---")
+            
+            # すべてのクラスの処理が完了
+            if total_classes > 1:
+                progress_bar.progress(1.0)
+                st.success(f"すべての車両クラス ({total_classes}個) に対するモデルトレーニングが完了しました！") 

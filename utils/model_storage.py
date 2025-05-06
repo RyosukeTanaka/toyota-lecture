@@ -26,7 +26,8 @@ def save_model(model: Any,
               comparison_results: pd.DataFrame,
               metrics: Dict[str, float],
               model_columns: Optional[List[str]] = None,  # 追加: 学習時の特徴量列名
-              categorical_features: Optional[List[str]] = None  # 追加: カテゴリカル特徴量
+              categorical_features: Optional[List[str]] = None,  # 追加: カテゴリカル特徴量
+              row_count: Optional[int] = None  # 追加: 学習データの行数
               ) -> str:
     """
     学習済みモデルと関連情報を保存
@@ -53,6 +54,8 @@ def save_model(model: Any,
         学習時に使用された特徴量の列名（変換後のもの）
     categorical_features: List[str], optional
         カテゴリカル特徴量のリスト
+    row_count: int, optional
+        学習に使用したデータの行数
         
     Returns:
     --------
@@ -85,6 +88,10 @@ def save_model(model: Any,
     
     if categorical_features is not None:
         metadata["categorical_features"] = categorical_features
+    
+    # 追加: 学習データの行数をメタデータに保存
+    if row_count is not None:
+        metadata["row_count"] = row_count
     
     # 比較結果をCSVとして保存
     comparison_csv_filename = f"{safe_model_name}_{timestamp}_comparison.csv"
