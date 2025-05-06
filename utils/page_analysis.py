@@ -29,7 +29,7 @@ def render_data_analysis_page(data: pd.DataFrame):
         if summary.get("status") == "success":
             # ★★★ Nullify と Lag の両方の結果を表示 ★★★
             nullify_res = summary.get("nullify_result", {})
-            lag_res = summary.get("lag_recalc_result", {})
+            lag_res_list = summary.get("lag_recalc_results", [])
 
             success_messages = []
             if nullify_res.get("count") is not None: # count が 0 でも表示
@@ -42,10 +42,16 @@ def render_data_analysis_page(data: pd.DataFrame):
                          f"**{summary.get('date', '不明')}**以降のデータ更新対象なし。"
                      )
 
-            if lag_res:
-                 success_messages.append(
-                     f"ラグ特徴量**'{lag_res.get('lag_col_name', '?')}'**を再計算({lag_res.get('nan_count', '?')}行NaN)。"
-                 )
+            if lag_res_list:
+                lag_descriptions = []
+                for lag_res in lag_res_list:
+                    lag_descriptions.append(
+                        f"**'{lag_res.get('lag_col_name', '?')}'**({lag_res.get('nan_count', '?')}行NaN)"
+                    )
+                if lag_descriptions:
+                    success_messages.append(
+                        f"ラグ特徴量 {', '.join(lag_descriptions)} を再計算。"
+                    )
 
             if success_messages:
                  st.success("✅ " + " ".join(success_messages))
@@ -98,13 +104,29 @@ def render_data_analysis_page(data: pd.DataFrame):
         cutoff_date_str = st.session_state['zero_cutoff_date']
         st.write(f"特定された日付 **{cutoff_date_str}** 以降のデータについて、")
         st.write(f"'{USAGE_COUNT_COLUMN}' および '{TARGET_VARIABLE}' を欠損値(NA)に更新し、")
-        st.write(f"'{LAG_TARGET_COLUMN}_lag{LAG_DAYS}' を再計算します。")
+        
+        # ラグ日数選択ウィジェットを追加
+        lag_days_options = [7, 15, 30]
+        selected_lag_days = st.multiselect(
+            f"生成するラグ特徴量を選択してください",
+            options=lag_days_options,
+            default=[30],  # デフォルトはlag 30
+            key="lag_days_multiselect"
+        )
+        
+        if not selected_lag_days:  # 何も選択されていない場合
+            selected_lag_days = [30]  # デフォルトとしてlag 30を使用
+            st.info("ラグ日数が選択されていないため、デフォルトの30日を使用します。")
+            
+        lag_days_text = ", ".join([f"lag{day}" for day in selected_lag_days])
+        st.write(f"'{LAG_TARGET_COLUMN}_{lag_days_text}' を再計算します。")
+        
         update_button = st.button(f"🔄 {cutoff_date_str} 以降のデータを更新＆ラグ再計算", key="update_data_button")
         if update_button:
             update_status = "error"
             update_message = ""
             nullify_result = None
-            lag_recalc_result = None
+            lag_recalc_results = []
             with st.spinner("データ更新とラグ再計算を実行中..."):
                 try:
                     current_data = st.session_state.get('processed_data')
@@ -119,11 +141,17 @@ def render_data_analysis_page(data: pd.DataFrame):
                     )
                     nullify_result = {"count": num_rows_updated, "cols": updated_cols}
                     if data_nulled is not None and num_rows_updated is not None:
-                        data_recalculated, lag_info = recalculate_lag_feature(
-                            df_processed=data_nulled, lag_target_col=LAG_TARGET_COLUMN, lag_days=LAG_DAYS,
-                            booking_date_col=BOOKING_DATE_COLUMN, group_cols=LAG_GROUP_COLS
-                        )
-                        lag_recalc_result = lag_info
+                        # 選択された各ラグ日数に対してラグ特徴量を再計算
+                        data_recalculated = data_nulled
+                        for lag_days in selected_lag_days:
+                            st.info(f"ラグ特徴量 lag{lag_days} を計算中...")
+                            data_recalculated, lag_info = recalculate_lag_feature(
+                                df_processed=data_recalculated, lag_target_col=LAG_TARGET_COLUMN, lag_days=lag_days,
+                                booking_date_col=BOOKING_DATE_COLUMN, group_cols=LAG_GROUP_COLS
+                            )
+                            if lag_info:
+                                lag_recalc_results.append(lag_info)
+                            
                         if data_recalculated is not None and isinstance(data_recalculated, pd.DataFrame):
                             st.session_state['processed_data'] = data_recalculated
                             update_status = "success"
@@ -132,7 +160,7 @@ def render_data_analysis_page(data: pd.DataFrame):
                 except Exception as e_update: update_message = f"予期せぬエラー: {e_update}"
                 st.session_state['last_update_summary'] = {
                     "status": update_status, "message": update_message, "date": cutoff_date_str,
-                    "nullify_result": nullify_result, "lag_recalc_result": lag_recalc_result
+                    "nullify_result": nullify_result, "lag_recalc_results": lag_recalc_results
                 }
                 if 'zero_cutoff_date' in st.session_state: del st.session_state['zero_cutoff_date']
             st.rerun()

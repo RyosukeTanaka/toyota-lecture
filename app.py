@@ -103,14 +103,23 @@ def main():
                     data_processed_base = preprocess_data(data_raw) # preprocessの結果を一時変数に
                     if data_processed_base is not None and not data_processed_base.empty:
                          st.info("初期ラグ特徴量を計算中...")
-                         # ★★★ recalculate_lag_feature の返り値をアンパック ★★★
-                         data_processed_final, lag_info = recalculate_lag_feature(
-                              df_processed=data_processed_base, # preprocess後のデータを渡す
-                              lag_target_col=LAG_TARGET_COLUMN,
-                              lag_days=LAG_DAYS,
-                              booking_date_col=BOOKING_DATE_COLUMN,
-                              group_cols=LAG_GROUP_COLS
-                         )
+                         # 複数のラグ日数に対応
+                         data_processed_final = data_processed_base.copy()
+                         lag_days_list = [7, 15, 30]  # ラグ日数のリスト
+                         
+                         for lag_days in lag_days_list:
+                             st.info(f"ラグ特徴量 lag{lag_days} を計算中...")
+                             # ★★★ recalculate_lag_feature の返り値をアンパック ★★★
+                             data_processed_final, lag_info = recalculate_lag_feature(
+                                  df_processed=data_processed_final, # 前のラグ計算結果を使用
+                                  lag_target_col=LAG_TARGET_COLUMN,
+                                  lag_days=lag_days,  # 動的なラグ日数
+                                  booking_date_col=BOOKING_DATE_COLUMN,
+                                  group_cols=LAG_GROUP_COLS
+                             )
+                             if lag_info:
+                                 st.success(f"ラグ特徴量 {lag_info.get('lag_col_name')} の計算が完了しました。")
+                         
                          # ★★★ セッションステートには DataFrame のみを保存 ★★★
                          if data_processed_final is not None:
                              st.session_state['processed_data'] = data_processed_final
