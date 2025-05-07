@@ -35,6 +35,7 @@ from utils.page_analysis import render_data_analysis_page     # 分析ページ�
 from utils.page_model_training import render_model_training_page # 新しく追加したモデルトレーニングページ関数
 from utils.page_batch_analysis import render_batch_analysis_page # バッチ分析ページ関数
 from utils.model_storage import ensure_model_directory # モデル保存ディレクトリ確保
+from utils.page_price_analysis import render_price_analysis_page
 
 # --- 定数 ---
 TARGET_VARIABLE = '利用台数累積'
@@ -73,16 +74,57 @@ def main():
          st.session_state['zero_cutoff_date'] = None
     if 'last_update_summary' not in st.session_state:
         st.session_state['last_update_summary'] = None
+    # ★★★ セッションステートに選択されたページを保存するためのキーを追加 ★★★
+    if 'selected_page_app' not in st.session_state:
+        st.session_state.selected_page_app = "モデルトレーニング" # デフォルトのページ
 
     # --- サイドバー --- #
     with st.sidebar:
         # st.image("logo.png", width=100)
         st.title("分析メニュー")
-        app_mode = st.radio(
+
+        # --- ★★★ メニューオプションの定義と表示方法の変更 ★★★ ---
+        page_options_display = {
+            "--- 主要機能 ---": None, 
+            "モデルトレーニング": "モデルトレーニング",
+            "予測分析": "予測分析",
+            "バッチ分析": "バッチ分析",
+            "--- 詳細分析・データ操作 ---": None, 
+            "データ分析・修正": "データ分析・修正",
+            "価格変動分析": "価格変動分析"
+        }
+        
+        selectable_options = [k for k, v in page_options_display.items() if v is not None]
+        
+        # format_func を使ってヘッダーを非選択可能に（見た目のみ）
+        def format_func(option):
+            if page_options_display.get(option) is None: # .getを使用し、キーが存在しない場合も考慮
+                return f"**{option}**" # 太字のヘッダー
+            return option
+
+        # 初期選択インデックスを安全に取得
+        try:
+            current_selection_index = list(page_options_display.keys()).index(st.session_state.selected_page_app)
+        except ValueError:
+            current_selection_index = list(page_options_display.keys()).index(selectable_options[0]) # 見つからなければ最初の有効なオプション
+            st.session_state.selected_page_app = selectable_options[0]
+
+        app_mode_selection = st.radio(
             "実行したい分析を選択してください:",
-            ("モデルトレーニング", "予測分析", "データ分析・修正", "バッチ分析"),
-            key="app_mode_select"
+            options=list(page_options_display.keys()),
+            format_func=format_func,
+            key="app_mode_select_formatted",
+            index=current_selection_index 
         )
+
+        # ヘッダーが選択された場合は、直前の有効な選択に戻す
+        if page_options_display.get(app_mode_selection) is None:
+            app_mode = st.session_state.selected_page_app 
+        else:
+            app_mode = app_mode_selection
+            st.session_state.selected_page_app = app_mode # 有効な選択を保存
+        # --- ★★★ ここまでメニュー表示方法の変更 ★★★ ---
+        
         st.markdown("---")
         st.header("データアップロード")
         uploaded_file = st.file_uploader("CSVファイルを選択", type='csv')
@@ -150,6 +192,8 @@ def main():
             render_data_analysis_page(current_data)           # 既存のままのページ
         elif app_mode == "バッチ分析":
             render_batch_analysis_page(current_data, config)           # 新しく追加したページ
+        elif app_mode == "価格変動分析":
+            render_price_analysis_page(current_data)
         else:
             st.error("無効なモードが選択されました。")
     elif uploaded_file is None:

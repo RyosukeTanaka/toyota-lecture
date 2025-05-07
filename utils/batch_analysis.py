@@ -18,7 +18,8 @@ from .model_storage import (
     load_model, prepare_features_for_prediction
 )
 from .revenue_analysis import calculate_revenue_difference
-from .visualization import plot_batch_revenue_comparison
+# visualizationのインポートは display_batch_results が削除されるため不要になるか確認
+# from .visualization import plot_batch_revenue_comparison # display_batch_results内で使われていた
 
 
 def batch_predict_date(
@@ -102,8 +103,15 @@ def batch_predict_date(
         result_meta["last_change_lt"] = last_change_lt
         
         if last_change_lt is None:
-            result_meta["error"] = "価格変更点が見つかりません"
-            return pd.DataFrame(), result_meta
+            # 価格変更点が見つからない場合でも、エラーとせず処理を続行できるように変更
+            # result_meta["error"] = "価格変更点が見つかりません"
+            # return pd.DataFrame(), result_meta
+            st.info(f"{date} {car_class}: 価格変更点が見つかりませんでした。全期間を対象とします。")
+            # 価格変更点がない場合は、リードタイムの最小値（0など）を使うか、特別な処理を検討
+            # ここでは、最も小さいリードタイムを使用する（例：0日）
+            last_change_lt = data_filtered_sorted[LEAD_TIME_COLUMN].min()
+            if pd.isna(last_change_lt):
+                last_change_lt = 0 # それでもNaNなら0
             
         # シナリオデータを作成（価格変更点固定）
         data_scenario = create_scenario_data(
@@ -123,219 +131,130 @@ def batch_predict_date(
         
         # カテゴリ変数の処理
         object_cols = scen_data_transformed.select_dtypes(include=['object']).columns
+        # `model_metadata` や `model_columns` がNoneでないことを確認
+        model_cols_in_meta = model_metadata.get("model_columns", []) if model_metadata else []
         for col in object_cols:
-            if model_metadata and "model_columns" in model_metadata and col in model_metadata.get("model_columns", []):
-                # カテゴリ変数をワンホットエンコーディングする必要がある場合は
-                # prepare_features_for_predictionに任せる
+            if model_metadata and "model_columns" in model_metadata and col in model_cols_in_meta:
                 continue
             else:
-                # モデルに直接渡す場合はobject型の列を削除
                 scen_data_transformed = scen_data_transformed.drop(columns=[col])
         
-        # ターゲット変数を除去
         if TARGET_VARIABLE in scen_data_transformed.columns:
             X = scen_data_transformed.drop(columns=[TARGET_VARIABLE])
         else:
             X = scen_data_transformed
             
-        # 予測実行
         y_pred = None
         
-        # 1. 特徴量変換を適用して予測を試行（優先）
         try:
             if model_metadata and "model_columns" in model_metadata:
-                st.info(f"{date} {car_class}の特徴量変換を適用...（モデル: {result_meta['model_name']}）")
-                try:
-                    # モデルのカラム情報を取得
-                    model_feature_names = model_metadata.get("model_columns", [])
-                    st.info(f"モデルが期待する特徴量: {model_feature_names}")
-                    
-                    # 特徴量変換を試みる
-                    transformed_data = prepare_features_for_prediction(X, model_metadata)
-                    
-                    # 特徴量の不一致チェック
-                    missing_features = [col for col in model_feature_names if col not in transformed_data.columns]
-                    if missing_features:
-                        st.warning(f"変換後も足りない特徴量があります: {missing_features}")
-                        # 足りない特徴量を0で埋める（応急処置）
-                        for col in missing_features:
-                            transformed_data[col] = 0
-                    
-                    # 余分な特徴量の削除
-                    extra_features = [col for col in transformed_data.columns if col not in model_feature_names]
-                    if extra_features:
-                        st.warning(f"モデルに不要な特徴量を削除します: {extra_features}")
-                        transformed_data = transformed_data.drop(columns=extra_features)
-                    
-                    # 特徴量の順序をモデルに合わせる
+                # st.info(f"{date} {car_class}の特徴量変換を適用...（モデル: {result_meta['model_name']}）")
+                transformed_data = prepare_features_for_prediction(X, model_metadata)
+                
+                # 特徴量の不一致チェックと修正
+                model_feature_names = model_metadata.get("model_columns", [])
+                missing_features = [col for col in model_feature_names if col not in transformed_data.columns]
+                if missing_features:
+                    # st.warning(f"変換後も足りない特徴量があります: {missing_features}")
+                    for col in missing_features:
+                        transformed_data[col] = 0
+                
+                extra_features = [col for col in transformed_data.columns if col not in model_feature_names]
+                if extra_features:
+                    # st.warning(f"モデルに不要な特徴量を削除します: {extra_features}")
+                    transformed_data = transformed_data.drop(columns=extra_features)
+                
+                if model_feature_names: # model_feature_namesが空でないことを確認
                     transformed_data = transformed_data[model_feature_names]
-                    
-                    # 最終チェック
-                    if list(transformed_data.columns) != model_feature_names:
-                        st.error(f"特徴量順序の不一致: {list(transformed_data.columns)} vs {model_feature_names}")
-                    else:
-                        st.success("特徴量の順序と数が一致しました！")
-                    
-                    # カテゴリ変数の追加チェック（念のため）
-                    cat_cols = transformed_data.select_dtypes(include=['object']).columns
-                    if not cat_cols.empty:
-                        st.warning(f"変換後もobject型の列が残っています: {list(cat_cols)}。数値型に変換します。")
-                        for col in cat_cols:
-                            transformed_data[col] = pd.factorize(transformed_data[col])[0]
-                    
-                    # NaN値のチェックと処理
-                    nan_cols = transformed_data.columns[transformed_data.isna().any()].tolist()
-                    if nan_cols:
-                        st.warning(f"予測データに欠損値(NaN)が含まれています。欠損値を処理します: {nan_cols}")
-                        
-                        # 欠損値を含む行数をカウント
-                        nan_rows_count = transformed_data.isna().any(axis=1).sum()
-                        st.info(f"欠損値を含む行数: {nan_rows_count}行 (全{len(transformed_data)}行中)")
-                        
-                        # 数値型の欠損値は平均値で埋める
-                        numeric_cols = transformed_data.select_dtypes(include=['number']).columns
-                        nan_numeric_cols = [col for col in nan_cols if col in numeric_cols]
-                        if nan_numeric_cols:
-                            # 各列ごとに平均値を計算（NaNは除く）
-                            for col in nan_numeric_cols:
-                                col_mean = transformed_data[col].mean()
-                                transformed_data[col].fillna(col_mean, inplace=True)
-                                st.info(f"数値列 '{col}' の欠損値を平均値 {col_mean:.4f} で補完しました")
-                        
-                        # 残りの列（カテゴリや計算不能な列）は0で埋める
-                        remaining_nan_cols = transformed_data.columns[transformed_data.isna().any()].tolist()
-                        if remaining_nan_cols:
-                            for col in remaining_nan_cols:
-                                transformed_data[col].fillna(0, inplace=True)
-                                st.info(f"列 '{col}' の欠損値を 0 で補完しました")
-                        
-                        # 最終確認 - すべてのNaNが処理されたか
-                        if transformed_data.isna().any().any():
-                            remaining_nan_cols = transformed_data.columns[transformed_data.isna().any()].tolist()
-                            st.error(f"まだ欠損値が残っています: {remaining_nan_cols}")
-                            # 最終手段としてすべての残りのNaNを0に変換
-                            transformed_data.fillna(0, inplace=True)
-                        else:
-                            st.success("すべての欠損値を処理しました")
-                    
-                    y_pred = model.predict(transformed_data)
-                    
-                except Exception as transform_error:
-                    st.error(f"特徴量変換中にエラー: {transform_error}")
-                    raise transform_error  # 次の方法を試すためにエラーを再度発生させる
-            else:
-                # モデルに直接渡す場合はobject型の列を削除
-                st.warning(f"{date} {car_class}のモデルメタデータがないため、直接予測を試みます。")
-                numeric_cols = X.select_dtypes(include=['number', 'bool']).columns
-                X_numeric = X[numeric_cols]
-                st.warning(f"数値型の列のみを使用します: {list(numeric_cols)}")
                 
-                # 欠損値のチェックと処理
-                nan_cols = X_numeric.columns[X_numeric.isna().any()].tolist()
+                cat_cols = transformed_data.select_dtypes(include=['object']).columns
+                if not cat_cols.empty:
+                    # st.warning(f"変換後もobject型の列が残っています: {list(cat_cols)}。数値型に変換します。")
+                    for col in cat_cols:
+                        transformed_data[col] = pd.factorize(transformed_data[col])[0]
+                
+                nan_cols = transformed_data.columns[transformed_data.isna().any()].tolist()
                 if nan_cols:
-                    st.warning(f"最終フォールバック: データに欠損値(NaN)が含まれています: {nan_cols}")
-                    # すべての欠損値を0で埋める（シンプルに処理）
-                    X_numeric.fillna(0, inplace=True)
-                    st.info(f"すべての欠損値を0で補完しました")
+                    # st.warning(f"予測データに欠損値(NaN)が含まれています。欠損値を処理します: {nan_cols}")
+                    numeric_cols_nan = transformed_data.select_dtypes(include=['number']).columns
+                    nan_numeric_cols = [col for col in nan_cols if col in numeric_cols_nan]
+                    if nan_numeric_cols:
+                        for col in nan_numeric_cols:
+                            col_mean = transformed_data[col].mean()
+                            transformed_data[col].fillna(col_mean, inplace=True)
+                    remaining_nan_cols = transformed_data.columns[transformed_data.isna().any()].tolist()
+                    if remaining_nan_cols:
+                        for col in remaining_nan_cols:
+                            transformed_data[col].fillna(0, inplace=True)
                 
+                y_pred = model.predict(transformed_data)
+            else:
+                # st.warning(f"{date} {car_class}のモデルメタデータがないため、直接予測を試みます。")
+                numeric_cols = X.select_dtypes(include=['number', 'bool']).columns
+                X_numeric = X[numeric_cols].copy() # SettingWithCopyWarning対策でcopy()
+                nan_cols_direct = X_numeric.columns[X_numeric.isna().any()].tolist()
+                if nan_cols_direct:
+                    X_numeric.fillna(0, inplace=True)
                 y_pred = model.predict(X_numeric)
         except Exception as e1:
-            # 2. 直接予測を試行（フォールバック）
             try:
                 if hasattr(model, 'predict'):
-                    st.info(f"{date} {car_class}のフォールバック予測を試行...")
-                    
-                    # 学習したモデルから特徴量情報を取得
-                    model_features = []
+                    # st.info(f"{date} {car_class}のフォールバック予測を試行...")
+                    model_features_direct = []
                     if hasattr(model, 'feature_names_in_'):
-                        model_features = list(model.feature_names_in_)
-                        st.info(f"モデルから直接取得した特徴量: {model_features}")
+                        model_features_direct = list(model.feature_names_in_)
                     
-                    if model_features:
-                        # モデルが使用する特徴量の情報がある場合は、それに合わせる
-                        # 数値特徴量だけを選択
-                        numeric_X = X.select_dtypes(include=['number', 'bool'])
-                        available_features = [col for col in model_features if col in numeric_X.columns]
-                        
-                        if available_features:
-                            # 利用可能な特徴量だけを選択
-                            X_selected = numeric_X[available_features]
-                            
-                            # 足りない特徴量を0で埋める
-                            missing_features = [col for col in model_features if col not in X_selected.columns]
-                            for col in missing_features:
-                                X_selected[col] = 0
-                                
-                            # 正しい順序に並べ替え
-                            X_selected = X_selected[model_features]
-                            st.warning(f"選択した特徴量: {X_selected.columns.tolist()}")
-                            
-                            # 欠損値のチェックと処理
-                            nan_cols = X_selected.columns[X_selected.isna().any()].tolist()
-                            if nan_cols:
-                                st.warning(f"フォールバック処理: 特徴量データに欠損値(NaN)が含まれています: {nan_cols}")
-                                # 各列ごとに平均値で埋める
-                                for col in nan_cols:
-                                    col_mean = X_selected[col].mean()
-                                    # mean()がNaNを返す場合（すべてNaNなど）は0で埋める
-                                    if pd.isna(col_mean):
-                                        X_selected[col].fillna(0, inplace=True)
-                                        st.info(f"列 '{col}' の欠損値を 0 で補完しました（有効な値がありません）")
+                    if model_features_direct:
+                        numeric_X_fallback = X.select_dtypes(include=['number', 'bool'])
+                        available_features_fallback = [col for col in model_features_direct if col in numeric_X_fallback.columns]
+                        if available_features_fallback:
+                            X_selected_fallback = numeric_X_fallback[available_features_fallback].copy()
+                            missing_features_fallback = [col for col in model_features_direct if col not in X_selected_fallback.columns]
+                            for col in missing_features_fallback:
+                                X_selected_fallback[col] = 0
+                            X_selected_fallback = X_selected_fallback[model_features_direct]
+                            nan_cols_fallback = X_selected_fallback.columns[X_selected_fallback.isna().any()].tolist()
+                            if nan_cols_fallback:
+                                for col in nan_cols_fallback:
+                                    col_mean_fallback = X_selected_fallback[col].mean()
+                                    if pd.isna(col_mean_fallback):
+                                        X_selected_fallback[col].fillna(0, inplace=True)
                                     else:
-                                        X_selected[col].fillna(col_mean, inplace=True)
-                                        st.info(f"列 '{col}' の欠損値を平均値 {col_mean:.4f} で補完しました")
-                                
-                                # 最終確認
-                                if X_selected.isna().any().any():
-                                    st.error("欠損値処理後もNaNが残っています。これらを0に置換します。")
-                                    X_selected.fillna(0, inplace=True)
-                            
-                            y_pred = model.predict(X_selected)
+                                        X_selected_fallback[col].fillna(col_mean_fallback, inplace=True)
+                            if X_selected_fallback.isna().any().any():
+                                X_selected_fallback.fillna(0, inplace=True)
+                            y_pred = model.predict(X_selected_fallback)
                         else:
-                            # 利用可能な特徴量がない場合はデフォルトに戻る
-                            numeric_cols = X.select_dtypes(include=['number', 'bool']).columns
-                            X_numeric = X[numeric_cols]
-                            st.warning(f"数値型の列のみを使用します: {list(numeric_cols)}")
-                            y_pred = model.predict(X_numeric)
+                            numeric_cols_fallback_else = X.select_dtypes(include=['number', 'bool']).columns
+                            X_numeric_fallback_else = X[numeric_cols_fallback_else].copy()
+                            X_numeric_fallback_else.fillna(0, inplace=True) # 欠損値処理
+                            y_pred = model.predict(X_numeric_fallback_else)
                     else:
-                        # モデル特徴量情報がない場合は数値型のみ
-                        numeric_cols = X.select_dtypes(include=['number', 'bool']).columns
-                        X_numeric = X[numeric_cols]
-                        st.warning(f"数値型の列のみを使用します: {list(numeric_cols)}")
-                        
-                        # 欠損値のチェックと処理
-                        nan_cols = X_numeric.columns[X_numeric.isna().any()].tolist()
-                        if nan_cols:
-                            st.warning(f"最終フォールバック: データに欠損値(NaN)が含まれています: {nan_cols}")
-                            # すべての欠損値を0で埋める（シンプルに処理）
-                            X_numeric.fillna(0, inplace=True)
-                            st.info(f"すべての欠損値を0で補完しました")
-                        
-                        y_pred = model.predict(X_numeric)
+                        numeric_cols_fallback_no_feat = X.select_dtypes(include=['number', 'bool']).columns
+                        X_numeric_fallback_no_feat = X[numeric_cols_fallback_no_feat].copy()
+                        X_numeric_fallback_no_feat.fillna(0, inplace=True) # 欠損値処理
+                        y_pred = model.predict(X_numeric_fallback_no_feat)
             except Exception as e2:
-                result_meta["error"] = f"予測に失敗しました: {str(e2)}"
+                result_meta["error"] = f"予測失敗(e1:{str(e1)}, e2:{str(e2)})"
                 return pd.DataFrame(), result_meta
                 
         if y_pred is None:
             result_meta["error"] = "予測結果がNoneです"
             return pd.DataFrame(), result_meta
             
-        # 予測結果をデータフレームに変換
         predictions_result = data_scenario.copy()
         predictions_result['prediction_label'] = y_pred
         
-        # 売上差額の計算
         revenue_df, total_actual, total_predicted, total_difference = calculate_revenue_difference(
             df_actual=data_filtered_sorted,
             df_predicted=predictions_result,
             lead_time_col=LEAD_TIME_COLUMN,
             actual_usage_col=TARGET_VARIABLE,
             pred_usage_col='prediction_label',
-            price_col=PRICE_COLUMNS[0],  # 価格_トヨタを使用
+            price_col=PRICE_COLUMNS[0], 
             change_lead_time=last_change_lt
         )
         
-        # 結果メタデータを更新
         result_meta["revenue_actual"] = total_actual
         result_meta["revenue_predicted"] = total_predicted
         result_meta["revenue_difference"] = total_difference
@@ -345,6 +264,8 @@ def batch_predict_date(
         
     except Exception as e:
         result_meta["error"] = str(e)
+        # import traceback # デバッグ時のみ
+        # traceback.print_exc() # デバッグ時のみ
         return pd.DataFrame(), result_meta
 
 
@@ -381,163 +302,49 @@ def run_batch_prediction(
     predictions = {}
     metadata_list = []
     
-    # 進捗バーの作成
     total_combinations = len(date_range) * len(car_classes)
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    completed = 0
+    # Streamlit要素はメインスレッドからのみ呼び出し可能なので、ここではコメントアウト
+    # progress_bar = st.progress(0)
+    # status_text = st.empty()
+    completed_tasks = 0 # completed だとPythonの予約語と被るので変更
     
-    # 並列処理用のタスクリスト作成
-    tasks = []
-    for date in date_range:
-        for car_class in car_classes:
-            tasks.append((date, car_class))
+    tasks = [(date_item, car_class_item) for date_item in date_range for car_class_item in car_classes]
             
-    # バッチ処理実行
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # タスク送信
         future_to_task = {
-            executor.submit(batch_predict_date, data, models, date, car_class, models_metadata): (date, car_class)
-            for date, car_class in tasks
+            executor.submit(batch_predict_date, data, models, task_date, task_car_class, models_metadata):
+            (task_date, task_car_class) for task_date, task_car_class in tasks
         }
         
-        # 結果回収
         for future in concurrent.futures.as_completed(future_to_task):
-            date, car_class = future_to_task[future]
+            task_date_done, task_car_class_done = future_to_task[future]
             try:
                 prediction_df, meta = future.result()
-                predictions[(date, car_class)] = prediction_df
+                predictions[(task_date_done, task_car_class_done)] = prediction_df
                 metadata_list.append(meta)
                 
-                # 進捗更新
-                completed += 1
-                progress_bar.progress(completed / total_combinations)
-                status_text.text(f"処理中... {completed}/{total_combinations} 完了")
-            except Exception as e:
-                st.error(f"{date} {car_class}の処理中にエラー: {e}")
+                completed_tasks += 1
+                # progress_bar.progress(completed_tasks / total_combinations)
+                # status_text.text(f"処理中... {completed_tasks}/{total_combinations} 完了")
+                print(f"Batch processing: {completed_tasks}/{total_combinations} done - {task_date_done} {task_car_class_done} - Success: {meta.get('success')}") # コンソールに進捗表示
+            except Exception as e_task:
+                print(f"Error processing {task_date_done} {task_car_class_done}: {e_task}") # コンソールにエラー表示
                 metadata_list.append({
-                    "date": date,
-                    "car_class": car_class,
+                    "date": task_date_done,
+                    "car_class": task_car_class_done,
                     "success": False,
-                    "error": str(e),
-                    "model_name": models_metadata.get(car_class, {}).get("model_name", "不明") if models_metadata else "不明"
+                    "error": str(e_task),
+                    "model_name": models_metadata.get(task_car_class_done, {}).get("model_name", "不明") if models_metadata else "不明"
                 })
+                completed_tasks += 1 # エラーでもタスクは完了したとみなす
+                # progress_bar.progress(completed_tasks / total_combinations)
+                # status_text.text(f"処理中... {completed_tasks}/{total_combinations} 完了 (エラー発生)")
     
-    # 進捗表示をクリア
-    status_text.empty()
-    progress_bar.empty()
+    # status_text.empty()
+    # progress_bar.empty()
     
     return predictions, metadata_list
 
 
-def display_batch_results(metadata_list: List[Dict[str, Any]]):
-    """バッチ処理結果の集計表示
-
-    Parameters
-    ----------
-    metadata_list : List[Dict[str, Any]]
-        バッチ予測のメタデータリスト
-    """
-    if not metadata_list:
-        st.warning("バッチ処理結果がありません")
-        return
-        
-    # 成功件数・失敗件数を集計
-    success_count = sum(1 for meta in metadata_list if meta.get("success", False))
-    fail_count = len(metadata_list) - success_count
-    
-    st.metric("処理総数", f"{len(metadata_list)}件", f"成功: {success_count}件, 失敗: {fail_count}件")
-    
-    # すべての処理が失敗した場合の処理
-    if success_count == 0:
-        st.error("すべての処理が失敗しました")
-        # 失敗詳細はここで表示
-        st.subheader("失敗詳細")
-        error_df = pd.DataFrame([
-            {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "モデル": meta.get("model_name", "不明"), "エラー内容": meta.get("error", "不明")}
-            for meta in metadata_list if not meta.get("success", False)
-        ])
-        st.dataframe(error_df)
-        return
-    
-    # 成功したデータの集計
-    success_data = [meta for meta in metadata_list if meta.get("success", False)]
-    
-    # 売上差額の合計
-    total_actual = sum(meta.get("revenue_actual", 0) for meta in success_data)
-    total_predicted = sum(meta.get("revenue_predicted", 0) for meta in success_data)
-    total_difference = sum(meta.get("revenue_difference", 0) for meta in success_data)
-    
-    # 集計メトリクス表示
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("実績総売上", f"{int(total_actual):,}円")
-    with col2:
-        st.metric("予測総売上（価格固定）", f"{int(total_predicted):,}円")
-    with col3:
-        delta_color = "normal" if total_difference >= 0 else "inverse"
-        st.metric("売上差額（実績-予測）", f"{int(total_difference):,}円", 
-                delta=f"{int(total_difference):,}円", delta_color=delta_color)
-    
-    # 詳細データフレーム作成
-    result_df = pd.DataFrame([
-        {
-            "利用日": meta.get("date"),
-            "車両クラス": meta.get("car_class"),
-            "使用モデル": meta.get("model_name", "不明"),
-            "価格変更リードタイム": meta.get("last_change_lt"),
-            "実績売上": int(meta.get("revenue_actual", 0)),
-            "予測売上": int(meta.get("revenue_predicted", 0)),
-            "売上差額": int(meta.get("revenue_difference", 0))
-        }
-        for meta in success_data
-    ])
-    
-    # 詳細データ表示（ソートあり）
-    st.subheader("詳細結果")
-    st.dataframe(result_df.sort_values(by=["利用日", "車両クラス"]))
-    
-    # グラフ表示（日付ごとの集計）
-    st.subheader("日付別売上差額")
-    date_revenue_df = result_df.groupby("利用日").agg({
-        "実績売上": "sum",
-        "予測売上": "sum",
-        "売上差額": "sum"
-    }).reset_index()
-    
-    fig = plot_batch_revenue_comparison(date_revenue_df, "利用日")
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # グラフ表示（車両クラスごとの集計）
-    st.subheader("車両クラス別売上差額")
-    class_revenue_df = result_df.groupby("車両クラス").agg({
-        "実績売上": "sum",
-        "予測売上": "sum",
-        "売上差額": "sum"
-    }).reset_index()
-    
-    fig2 = plot_batch_revenue_comparison(class_revenue_df, "車両クラス", horizontal=True)
-    st.plotly_chart(fig2, use_container_width=True)
-    
-    # CSVダウンロード機能
-    csv = result_df.to_csv(index=False).encode('utf-8')
-    filename = f"batch_analysis_results_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-    st.download_button("💾 集計結果をダウンロード", csv, filename, "text/csv")
-    
-    # 要約テキスト
-    if total_difference > 0:
-        st.success(f"**全体分析**: 期間全体で価格変更により **{int(total_difference):,}円** の追加売上が発生したと推定されます。価格戦略は有効に機能しています。")
-    elif total_difference < 0:
-        st.warning(f"**全体分析**: 期間全体で価格変更により **{abs(int(total_difference)):,}円** の売上減少があったと推定されます。価格戦略の見直しが必要かもしれません。")
-    else:
-        st.info("**全体分析**: 期間全体で価格変更による売上への顕著な影響は見られませんでした。")
-        
-    # 失敗詳細をページの最下部に表示
-    if fail_count > 0:
-        st.markdown("---")
-        st.subheader("失敗詳細")
-        error_df = pd.DataFrame([
-            {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "モデル": meta.get("model_name", "不明"), "エラー内容": meta.get("error", "不明")}
-            for meta in metadata_list if not meta.get("success", False)
-        ])
-        st.dataframe(error_df) 
+# display_batch_results 関数は utils/page_batch_analysis.py に display_batch_results_in_page として移植されたため、ここでは削除します。
+# 以前の display_batch_results 関数のコードは削除済みです。 

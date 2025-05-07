@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>トヨタレンタカー ダイナミックプライシング効果分析 (2025/04/01 - 2025/04/14)</title>
+    <style>
+        body {
+            font-family: "Meiryo", sans-serif;
+            font-size: 18pt;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        .presentation-container {
+            width: 1280px; /* slide_width */
+            margin: 20px auto;
+            border: 1px solid #ccc;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .slide {
+            width: 1280px; /* slide_width */
+            height: 720px; /* slide_height */
+            background-color: #fff;
+            border-bottom: 1px solid #ddd;
+            padding: 40px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            text-align: left; /* text_alignment */
+            overflow: auto; /* Prevent content overflow */
+            margin-bottom: 20px; /* Add spacing between slides */
+        }
+        .slide h1, .slide h2 {
+            color: #005dab; /* professional_blue theme primary color */
+        }
+        .slide h1 {
+            font-size: 32pt; /* title_font_size for slide titles, assuming h1 for main presentation title */
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .slide h2 { /* Main title for each slide */
+            font-size: 28pt; /* Adjusted from title_font_size for individual slide titles */
+            margin-bottom: 20px;
+            border-bottom: 2px solid #005dab;
+            padding-bottom: 10px;
+        }
+        .slide .subtitle {
+            font-size: 24pt; /* subtitle_font_size */
+            text-align: center;
+            color: #555;
+            margin-bottom: 30px;
+        }
+        .slide p, .slide li, .slide td, .slide th {
+            font-size: 18pt; /* base_font_size */
+            line-height: 1.6;
+        }
+        .slide ul, .slide ol {
+            margin-left: 40px;
+            margin-bottom: 20px;
+        }
+        .slide li {
+            margin-bottom: 10px;
+        }
+        .slide strong {
+            color: #004b8c;
+        }
+        .slide table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        .slide th, .slide td {
+            border: 1px solid #ddd; /* table_style: light_grid */
+            padding: 10px; /* Reduced padding */
+            text-align: left;
+            font-size: 14pt; /* Reduced font size for tables */
+        }
+        .slide th {
+            background-color: #e9f2f9; /* Lighter blue for table headers */
+            color: #005dab;
+        }
+        .slide figure {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .slide figure img {
+            max-width: 100%;
+            max-height: 400px; /* Default max height for images */
+            object-fit: contain; /* image_sizing */
+            border: 1px solid #eee;
+        }
+        .slide figure figcaption {
+            font-size: 0.9em;
+            color: #777;
+            margin-top: 8px;
+        }
+        .slide .content-image-container, .slide .image-table-container {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        .slide .text-content, .slide .table-content {
+            flex: 1;
+        }
+        .slide .image-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .slide .image-content img {
+             max-height: 320px; /* Reduced max-height further for slides 8 and 9 */
+        }
+        .slide .key-metrics {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-left: 5px solid #005dab;
+        }
+        .slide .metric-item {
+            font-size: 1.1em;
+            margin-bottom: 8px;
+        }
+        .slide .metric-label {
+            font-weight: bold;
+        }
+        .slide .metric-value {
+            margin-left: 10px;
+        }
+        .slide .trend-arrow.positive { color: #28a745; }
+        .slide .trend-arrow.negative { color: #dc3545; }
+
+        .slide .conclusion {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9f2f9;
+            border: 1px solid #c6d8e5; /* Corrected from #c6dres */
+            border-radius: 5px;
+        }
+        .slide .notes {
+            margin-top: auto; /* Push notes to the bottom */
+            font-size: 0.8em;
+            color: #999;
+            padding-top: 20px;
+            border-top: 1px dashed #ccc;
+            display: none; /* Hide notes by default */
+        }
+
+        /* Specific slide types */
+        .title-slide {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .title-slide h1 {
+             font-size: 48pt; /* Larger for main title slide */
+        }
+        .title-slide .subtitle {
+             font-size: 28pt;
+        }
+        .qa-slide {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .qa-slide h2 {
+            font-size: 40pt;
+            border-bottom: none;
+        }
+        .placeholder-box {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            margin: 20px 0;
+            background-color: #f9f9f9;
+            text-align: center;
+            color: #777;
+        }
+
+        /* Slide 7 specific styles */
+        .content-with-image-slide .text-content p,
+        .content-with-image-slide .key-metrics .metric-item,
+        .content-with-image-slide .image-content div p,
+        .content-with-image-slide .image-content div li {
+            font-size: 16pt; /* Slightly smaller font for this slide */
+        }
+        .content-with-image-slide .key-metrics .metric-label,
+        .content-with-image-slide .image-content div strong {
+            font-size: 17pt; /* Slightly smaller for labels */
+        }
+        .slide .analysis-points li {
+            font-size: 15pt; /* Smaller font for analysis points */
+            margin-bottom: 8px;
+        }
+
+        /* Slide 6 specific table style */
+        .slide.model-summary-slide table th,
+        .slide.model-summary-slide table td {
+            font-size: 12pt; /* Further reduced font size for model summary table */
+            padding: 8px; /* Further reduced padding */
+        }
+
+        .slide .two-column-table-container {
+            display: flex;
+            gap: 20px; /* Space between the two table columns */
+        }
+        .slide .table-column {
+            flex: 1;
+        }
+        .slide .table-column table {
+            width: 100%;
+        }
+
+        .slide .image-table-slide .image-content img {
+             max-height: 550px; /* Further increased max-height for graph images */
+        }
+
+        /* Slide 9b specific table style */
+        .slide.date-summary-table-slide table th,
+        .slide.date-summary-table-slide table td {
+            font-size: 12pt; /* Reduced font size for date summary table */
+            padding: 7px; /* Adjusted padding */
+        }
+
+        /* Slide 3 specific styles */
+        .introduction-slide .intro-container {
+            display: flex;
+            gap: 30px; /* Adjusted gap for 2 items */
+            justify-content: center; /* Center the two items */
+        }
+        .introduction-slide .intro-point {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-basis: 45%; /* Adjust basis for 2 items */
+            max-width: 45%;
+        }
+        .introduction-slide .icon svg {
+            width: 48px; /* SVG icon size */
+            height: 48px;
+            margin-bottom: 10px;
+            fill: #005dab; /* Icon color */
+        }
+        .introduction-slide .intro-point h3 {
+            font-size: 20pt;
+            color: #005dab;
+            margin-bottom: 10px;
+        }
+        .introduction-slide .intro-point p {
+            text-align: center;
+            font-size: 17pt; /* Slightly smaller for better fit */
+        }
+    </style>
+</head>
+<body>
+    <div class="presentation-container">
+        <!-- Slide 1: Title -->
+        <section class="slide title-slide">
+            <h1>トヨタレンタカー ダイナミックプライシング効果分析</h1>
+            <p class="subtitle">分析期間: 2025年4月1日 - 2025年4月14日</p>
+            <div class="notes">
+                <p><em>発表者: AI分析チーム</em></p>
+                <p><em>日付: 2025年5月8日</em></p>
+                <p><em>スライドノート: 表紙スライドです。</em></p>
+            </div>
+        </section>
+
+        <!-- Slide 2: Agenda -->
+        <section class="slide agenda-slide">
+            <h2>目次</h2>
+            <ul>
+                <li>はじめに: 分析の目的と背景</li>
+                <li>分析アプローチ</li>
+                <li>使用データ概要</li>
+                <li>モデルトレーニング結果サマリー</li>
+                <li>ダイナミックプライシング効果分析 (全体)</li>
+                <li>ダイナミックプライシング効果分析 (車両クラス別)</li>
+                <li>ダイナミックプライシング効果分析 (日別)</li>
+                <li>考察と結論</li>
+                <li>今後の展望</li>
+            </ul>
+            <div class="notes"><p><em>スライドノート: 本日のアジェンダです。</em></p></div>
+        </section>
+
+        <!-- Slide 3: Introduction -->
+        <section class="slide content-slide introduction-slide">
+            <h2>はじめに: 分析の目的と背景</h2>
+            <div class="intro-container">
+                <div class="intro-point">
+                    <span class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="48px" height="48px"><path d="M0 0h24v24H0z" fill="none"/><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6z"/></svg>
+                    </span>
+                    <div>
+                        <h3>本分析の目的</h3>
+                        <p>本分析では、トヨタレンタカー様が導入されているダイナミックプライシング戦略が、<strong>指定期間（2025年4月1日～14日）の売上</strong>に実際にどのような影響を与えたのかを、データに基づいて定量的に評価します。</p>
+                    </div>
+                </div>
+                <div class="intro-point">
+                    <span class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="48px" height="48px"><path d="M0 0h24v24H0z" fill="none"/><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6z"/></svg>
+                    </span>
+                    <div>
+                        <h3>期待される成果</h3>
+                        <p>過去実績データを基に構築した機械学習モデルを用い、「価格が固定だった場合」の仮想シナリオと比較することで、価格変更による具体的な売上増減効果を明らかにします。これにより、今後の価格戦略の意思決定に資する洞察を得ることを目指します。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="notes"><p><em>スライドノート: 分析のゴールと期待される成果を、より構造化して説明します。アイコンをSVGに変更。</em></p></div>
+        </section>
+
+        <!-- Slide 4: Approach -->
+        <section class="slide content-slide">
+            <h2>分析アプローチ</h2>
+            <ul>
+                <li><strong>データ収集と前処理:</strong> 過去の予約実績データを使用し、日付変換、リードタイム計算、価格差・ラグ特徴量などの特徴量エンジニアリングを実施しました。</li>
+                <li><strong>モデル構築:</strong> 車両クラスごとに最適な予測モデルをPyCaretを用いて選択・学習しました。主に勾配ブースティング系のモデルが採用されました。</li>
+                <li><strong>シナリオ設定:</strong> 「価格変動がなかった場合（価格最終変更点以降の価格で固定）」という比較シナリオを設定しました。</li>
+                <li><strong>効果測定:</strong> 実績売上とシナリオ売上を比較し、価格変更による売上差額を算出しました。</li>
+            </ul>
+            <div class="notes"><p><em>スライドノート: どのような手順で分析を進めたかを説明します。</em></p></div>
+        </section>
+
+        <!-- Slide 5: Data Overview -->
+        <section class="slide content-slide">
+            <h2>使用データ概要</h2>
+            <p>分析には、トヨタレンタカーの過去数年間にわたる予約実績データを使用しました。主な特徴量として、予約日、利用日、リードタイム、車両クラス、価格情報（トヨタ・オリックス）、キャンペーン情報などが含まれます。</p>
+            <table>
+                <thead><tr><th>項目</th><th>説明</th></tr></thead>
+                <tbody>
+                    <tr><td>分析期間</td><td>2025年4月1日～2025年4月14日</td></tr>
+                    <tr><td>対象データ</td><td>過去予約実績データ</td></tr>
+                    <tr><td>主な特徴量</td><td>予約日、利用日、リードタイム、車両クラス、価格、キャンペーン情報、ラグ特徴量など</td></tr>
+                </tbody>
+            </table>
+            <div class="notes"><p><em>スライドノート: 分析に使用したデータの種類や期間、主な特徴量を説明します。</em></p></div>
+        </section>
+
+        <!-- Slide 6: Model Training Summary -->
+        <section class="slide content-slide model-summary-slide">
+            <h2>モデルトレーニング結果サマリー</h2>
+            <p>各車両クラスに対して最適な予測モデル(Gradient Boosting Regressor)を構築しました。主要な評価指標は以下の通りです。</p>
+            <div class="two-column-table-container">
+                <div class="table-column">
+                    <table>
+                        <thead><tr><th>車両クラス</th><th>モデルタイプ</th><th>RMSE</th><th>R2</th></tr></thead>
+                        <tbody>
+                            <tr><td>C1</td><td>GradientBoostingRegressor</td><td>3.9980</td><td>0.7942</td></tr>
+                            <tr><td>C2</td><td>GradientBoostingRegressor</td><td>2.3291</td><td>0.7697</td></tr>
+                            <tr><td>C3</td><td>GradientBoostingRegressor</td><td>1.4706</td><td>0.6785</td></tr>
+                            <tr><td>SUV1</td><td>GradientBoostingRegressor</td><td>0.7759</td><td>0.6532</td></tr>
+                            <tr><td>SUV2</td><td>GradientBoostingRegressor</td><td>0.7185</td><td>0.6902</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-column">
+                    <table>
+                        <thead><tr><th>車両クラス</th><th>モデルタイプ</th><th>RMSE</th><th>R2</th></tr></thead>
+                        <tbody>
+                            <tr><td>SUV3</td><td>GradientBoostingRegressor</td><td>0.6038</td><td>0.2630</td></tr>
+                            <tr><td>W1</td><td>GradientBoostingRegressor</td><td>0.9584</td><td>0.7154</td></tr>
+                            <tr><td>W2</td><td>GradientBoostingRegressor</td><td>1.4787</td><td>0.6909</td></tr>
+                            <tr><td>W3</td><td>GradientBoostingRegressor</td><td>0.6473</td><td>0.7089</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <p style="text-align: center; margin-top: 15px;"><em>*RMSEは値が小さいほど、R2は1に近いほど精度が高いことを示します。</em></p>
+            <div class="notes"><p><em>スライドノート: 構築したモデルの精度や種類について触れます。model_summary.mdから主要指標を抜粋・集約して2列で表示。</em></p></div>
+        </section>
+
+        <!-- Slide 7: Overall Dynamic Pricing Effect -->
+        <section class="slide content-with-image-slide">
+            <h2>ダイナミックプライシング効果分析 (全体サマリー)</h2>
+            <div class="content-image-container">
+                <div class="text-content">
+                    <p>分析期間全体（2025年4月1日～14日）において、ダイナミックプライシング戦略により、<strong>約332万円の売上増加</strong>効果があったと推定されます。<br>これは、価格を固定した場合の予測売上と比較して算出されたものです。</p>
+                    <div class="key-metrics">
+                        <div class="metric-item"><span class="metric-label">実績総売上:</span><span class="metric-value">17,646,805円</span></div>
+                        <div class="metric-item"><span class="metric-label">予測総売上（価格固定）:</span><span class="metric-value">14,324,797円</span></div>
+                        <div class="metric-item"><span class="metric-label">売上差額（実績-予測）:</span><span class="metric-value">3,322,007円</span> <span class="trend-arrow positive">▲</span></div>
+                    </div>
+                    <p style="margin-top: 20px;"><strong>全体分析:</strong> 期間全体で価格変更により 3,322,007円 の追加売上が発生したと推定されます。価格戦略は有効に機能しています。</p>
+                </div>
+                <figure class="image-content" style="justify-content: center;">
+                    <div style="border: 1px solid #eee; padding: 15px; background-color: #f8f9fa; text-align: left; font-size: 0.9em;">
+                        <p><strong>バッチ処理詳細:</strong></p>
+                        <ul style="list-style: none; padding-left: 0;">
+                            <li>実行日時: 20250507_145836</li>
+                            <li>処理総数: 126件</li>
+                            <li>成功: 117件</li>
+                            <li>失敗: 9件</li>
+                        </ul>
+                    </div>
+                </figure>
+            </div>
+            <div class="notes"><p><em>スライドノート: バッチ処理結果のサマリーを提示し、全体的な効果を説明します。summary.txtの内容を整形して表示。</em></p></div>
+        </section>
+
+        <!-- Slide 8a: Effect by Vehicle Class - Graph -->
+        <section class="slide image-table-slide">
+            <h2>ダイナミックプライシング効果分析 (車両クラス別) - グラフ</h2>
+            <div class="image-table-container">
+                <figure class="image-content">
+                    <img src="batch_results_20250507_145836/売上比較分析-クラス別.png" alt="車両クラス別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す横棒グラフ。C1, C3で大きなプラス差額が見られる。">
+                    <figcaption>車両クラス別 売上比較分析</figcaption>
+                </figure>
+                <div class="text-content">
+                    <ul class="analysis-points">
+                        <li>C1、C3クラスでは特に大きな増収効果が見られました。</li>
+                        <li>SUV2、W3クラスでは、ダイナミックプライシングによるわずかな減収が確認されましたが、全体への影響は限定的です。</li>
+                        <li>このグラフは、各車両クラスの売上実績と価格固定シナリオでの予測売上、そしてその差額を視覚的に示しています。</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="notes"><p><em>スライドノート: 車両クラスごとの売上影響をグラフで示します。</em></p></div>
+        </section>
+
+        <!-- Slide 8b: Effect by Vehicle Class - Table (2 columns) -->
+        <section class="slide content-slide">
+            <h2>ダイナミックプライシング効果分析 (車両クラス別) - 詳細データ</h2>
+            <div class="two-column-table-container">
+                <div class="table-column">
+                    <table>
+                        <thead><tr><th>車両クラス</th><th>実績売上</th><th>予測売上</th><th>売上差額</th></tr></thead>
+                        <tbody>
+                            <tr><td>C1</td><td>5,755,750</td><td>3,827,122</td><td>1,928,614</td></tr>
+                            <tr><td>C2</td><td>2,498,430</td><td>2,288,665</td><td>209,757</td></tr>
+                            <tr><td>C3</td><td>3,234,000</td><td>2,515,213</td><td>718,773</td></tr>
+                            <tr><td>SUV1</td><td>497,420</td><td>428,972</td><td>68,440</td></tr>
+                            <tr><td>SUV2</td><td>339,405</td><td>374,831</td><td>-35,426</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-column">
+                    <table>
+                        <thead><tr><th>車両クラス</th><th>実績売上</th><th>予測売上</th><th>売上差額</th></tr></thead>
+                        <tbody>
+                            <tr><td>SUV3</td><td>364,980</td><td>241,105</td><td>123,866</td></tr>
+                            <tr><td>W1</td><td>887,040</td><td>714,326</td><td>172,706</td></tr>
+                            <tr><td>W2</td><td>3,121,800</td><td>2,952,269</td><td>169,522</td></tr>
+                            <tr><td>W3</td><td>947,980</td><td>982,243</td><td>-34,264</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <ul class="analysis-points" style="margin-top: 15px;">
+                <li>左の表はC1からSUV2、右の表はSUV3からW3クラスのデータを示しています。</li>
+                <li>売上差額がマイナスとなっているのはSUV2とW3クラスです。</li>
+            </ul>
+            <div class="notes"><p><em>スライドノート: class_revenue_summary.csv の内容を2列のテーブルで表示。</em></p></div>
+        </section>
+
+        <!-- Slide 9a: Effect by Date - Graph -->
+        <section class="slide image-table-slide">
+            <h2>ダイナミックプライシング効果分析 (日別) - グラフ</h2>
+            <div class="image-table-container">
+                <figure class="image-content">
+                    <img src="batch_results_20250507_145836/売上比較分析-日別.png" alt="2025年4月1日から14日の日別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す縦棒グラフ。期間中ほぼ毎日プラスの差額が見られる。">
+                    <figcaption>日別 売上比較分析</figcaption>
+                </figure>
+                <div class="text-content">
+                    <ul class="analysis-points">
+                        <li>分析期間中、ほぼ全ての日でダイナミックプライシングによる増収効果が確認されました。</li>
+                        <li>特に需要が高まる週末や特定日において、価格最適化が効果的に機能していると考えられます。</li>
+                        <li>このグラフは、日ごとの売上実績と価格固定シナリオでの予測売上、その差額を視覚的に示しています。</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="notes"><p><em>スライドノート: 日別の売上影響をグラフで示します。</em></p></div>
+        </section>
+
+        <!-- Slide 9b: Effect by Date - Table (2 columns) -->
+        <section class="slide content-slide date-summary-table-slide">
+            <h2>ダイナミックプライシング効果分析 (日別) - 詳細データ</h2>
+            <div class="two-column-table-container">
+                <div class="table-column">
+                    <table>
+                        <thead><tr><th>利用日</th><th>実績売上</th><th>予測売上</th><th>売上差額</th></tr></thead>
+                        <tbody>
+                            <tr><td>2025-04-01</td><td>731,280</td><td>645,245</td><td>86,032</td></tr>
+                            <tr><td>2025-04-02</td><td>889,570</td><td>843,554</td><td>46,013</td></tr>
+                            <tr><td>2025-04-03</td><td>1,293,985</td><td>1,249,701</td><td>44,280</td></tr>
+                            <tr><td>2025-04-04</td><td>1,718,255</td><td>1,469,453</td><td>248,795</td></tr>
+                            <tr><td>2025-04-05</td><td>1,738,165</td><td>1,381,407</td><td>356,752</td></tr>
+                            <tr><td>2025-04-06</td><td>1,542,310</td><td>1,185,025</td><td>357,279</td></tr>
+                            <tr><td>2025-04-07</td><td>1,127,830</td><td>840,557</td><td>287,269</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-column">
+                    <table>
+                        <thead><tr><th>利用日</th><th>実績売上</th><th>予測売上</th><th>売上差額</th></tr></thead>
+                        <tbody>
+                            <tr><td>2025-04-08</td><td>977,020</td><td>729,498</td><td>247,517</td></tr>
+                            <tr><td>2025-04-09</td><td>955,570</td><td>773,822</td><td>181,743</td></tr>
+                            <tr><td>2025-04-10</td><td>1,051,490</td><td>810,319</td><td>241,166</td></tr>
+                            <tr><td>2025-04-11</td><td>1,347,280</td><td>1,023,932</td><td>323,343</td></tr>
+                            <tr><td>2025-04-12</td><td>1,412,620</td><td>1,092,912</td><td>319,703</td></tr>
+                            <tr><td>2025-04-13</td><td>1,602,260</td><td>1,292,497</td><td>309,756</td></tr>
+                            <tr><td>2025-04-14</td><td>1,259,170</td><td>986,824</td><td>272,340</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <ul class="analysis-points" style="margin-top: 15px;">
+                 <li>表は分析期間内の日別データを示しており、左列が前半、右列が後半の期間です。</li>
+                 <li>全ての日付で実績売上が予測売上を上回っていることが確認できます。</li>
+            </ul>
+            <div class="notes"><p><em>スライドノート: date_revenue_summary.csv の内容を2列のテーブルで表示。</em></p></div>
+        </section>
+
+        <!-- Slide 10: Discussion and Conclusion -->
+        <section class="slide content-slide">
+            <h2>考察と結論</h2>
+            <ul>
+                <li><strong>全体効果:</strong> ダイナミックプライシング戦略は、分析期間において明確な増収効果（約332万円）をもたらしました。</li>
+                <li><strong>クラス別傾向:</strong> 多くの車両クラスで増収が見られましたが、一部クラスでは微減となりました。クラス特性に応じた価格設定のさらなる最適化が期待されます。</li>
+                <li><strong>日別傾向:</strong> 日々変動する需要に対し、価格調整が有効に機能していることが示唆されました。</li>
+                <li><strong>モデル精度:</strong> 予測モデルの精度は概ね良好でしたが、一部データ欠損による予測エラーも散見されました。データ品質の維持・向上が重要です。(<code>batch_results_20250507_145836/error_details.csv</code> 参照)</li>
+            </ul>
+            <div class="conclusion">
+                <p><strong>結論:</strong> 総じて、ダイナミックプライシングは売上増加に貢献しており、今後も継続的な改善とデータに基づいた価格調整が推奨されます。</p>
+            </div>
+            <div class="notes"><p><em>スライドノート: 分析結果から何が言えるか、結論を述べます。error_details.csv の内容も少し触れます。</em></p></div>
+        </section>
+
+        <!-- Slide 11: Future Outlook -->
+        <section class="slide content-slide">
+            <h2>今後の展望</h2>
+            <ul>
+                <li><strong>価格戦略の精緻化:</strong> 車両クラスごとの価格感度分析や、イベント・季節要因をより詳細に組み込んだ価格設定モデルの検討。</li>
+                <li><strong>データ品質向上:</strong> 予測精度向上のため、欠損データへの対応策（補完ロジックの改善、データ収集プロセスの見直しなど）の強化。</li>
+                <li><strong>リアルタイム性向上:</strong> より短期間での価格調整を可能にするためのシステム・プロセス改善。</li>
+                <li><strong>長期的な効果検証:</strong> 定期的な効果測定と、市況変動に合わせたモデルの再学習・チューニングサイクルの確立。</li>
+            </ul>
+            <div class="notes"><p><em>スライドノート: 今回の分析を踏まえ、次に何をすべきか、将来的なアクションアイテムを提案します。</em></p></div>
+        </section>
+
+        <!-- Slide 12: Q&A -->
+        <section class="slide qa-slide">
+            <h2>ご清聴ありがとうございました</h2>
+            <p class="subtitle">質疑応答</p>
+            <div class="notes"><p><em>スライドノート: Q&Aセッション用のスライドです。</em></p></div>
+        </section>
+    </div>
+</body>
+</html> 

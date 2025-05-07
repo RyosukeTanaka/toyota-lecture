@@ -256,9 +256,10 @@ def find_last_price_change_lead_time(df_filtered, price_cols, lead_time_col):
     指定された価格列について、価格が最後に変更されたリードタイムを返す。
     変更がない場合はNoneを返す。
     複数の価格列がある場合、最も小さいリードタイム（利用日に近い）を返す。
+    価格変動が全くない価格列は、最終変更リードタイムの決定に影響しない。
     """
     last_change_lead_time = float('inf')
-    changed = False
+    # changed = False # changed_in_any_active_col に置き換え
 
     if df_filtered.empty or lead_time_col not in df_filtered.columns:
         st.warning("価格変更点検出: 入力データが空、またはリードタイム列が見つかりません。")
@@ -267,28 +268,41 @@ def find_last_price_change_lead_time(df_filtered, price_cols, lead_time_col):
     # リードタイムでソート (降順: 大きい方から小さい方へ)
     df_sorted = df_filtered.sort_values(by=lead_time_col, ascending=False)
 
+    active_price_cols = []
     for price_col in price_cols:
         if price_col not in df_sorted.columns:
-            st.warning(f"価格変更点検出: 価格列 '{price_col}' が見つかりません。")
+            st.warning(f"価格変更点検出: 価格列 '{price_col}' が見つかりません。スキップします。")
+            continue
+        # dropna=True で NaN を無視してユニークな値の数を数える
+        if df_sorted[price_col].nunique(dropna=True) > 1:
+            active_price_cols.append(price_col)
+        else:
+            st.info(f"価格変更点検出: 価格列 '{price_col}' には価格変動がありませんでした。この列は分析から除外されます。")
+
+    if not active_price_cols:
+        st.info("価格最終変更点検出: 分析対象の価格列の中に、価格変動のあった列が見つかりませんでした。")
+        return None
+
+    changed_in_any_active_col = False # 初期化
+
+    for price_col in active_price_cols: # 変動があった列のみをループ
+        if price_col not in df_sorted.columns:
+            # active_price_cols生成時にチェック済みだが念のため
+            # st.warning(f"価格変更点検出: 価格列 '{price_col}' が見つかりません。")
             continue
 
-        # 価格が数値でない行を除外、または警告 (必要に応じて)
-        # df_sorted[price_col] = pd.to_numeric(df_sorted[price_col], errors='coerce')
-        # if df_sorted[price_col].isnull().any():
-        #     st.warning(f"警告: 価格列 '{price_col}' に数値でない値が含まれています。")
+        price_values = df_sorted[price_col]
+        # 有効な（NaNでない）データポイントが2つ未満の場合、変動を検出しようがない
+        if price_values.count() < 2:
+            # st.info(f"価格列 '{price_col}' の有効なデータポイントが2未満のため、変動を検出できません。")
+            continue
 
-        # 前行との差分を計算 (NaNは変化とみなさないように先にfillnaするか、比較時に考慮)
-        # fillna(method='ffill').diff() は最初の非NaNとの差を見る場合に有効
-        # より単純に、NaNとの比較は常にFalseになることを利用
-        diffs = df_sorted[price_col].ne(df_sorted[price_col].shift(-1)) # 次行と比較(降順なので時間的に前)
-        # 最もリードタイムの小さい行（最後の行）の変化も検出できるように調整
-        # diffs.iloc[-1] = df_sorted[price_col].iloc[-1] != df_sorted[price_col].iloc[-2] if len(df_sorted)>1 else False # この方法は少し複雑
+        # 現在の行の価格と、前のリードタイム（df_sortedでは1つ前の行）の価格を比較
+        # df_sortedはリードタイム降順なので、shift(1)は時間的に「過去」のデータ（リードタイム大）
+        shifted_prices = price_values.shift(1)
+        price_changes = price_values.ne(shifted_prices)
 
-        # shift()を使う方法: 前のリードタイムと比較
-        # ascending=Falseなので、shift(1)は時間的に「後」のデータ(リードタイム小)
-        price_changes = df_sorted[price_col].ne(df_sorted[price_col].shift(1))
-
-        # 最初の行(最大のリードタイム)は常に変化なしとする (shift(1)の結果がNaNになるため)
+        # 最初の行(最大のリードタイム)は常に変化なしとする (shift(1)の結果がNaNになるため比較結果に影響)
         if not price_changes.empty:
             price_changes.iloc[0] = False
 
@@ -298,17 +312,19 @@ def find_last_price_change_lead_time(df_filtered, price_cols, lead_time_col):
             # 最もリードタイムが小さい変化点のリードタイムを取得
             current_col_last_change_lt = df_sorted.loc[change_indices, lead_time_col].min()
             last_change_lead_time = min(last_change_lead_time, current_col_last_change_lt)
-            changed = True
+            changed_in_any_active_col = True
         # else:
-        #     st.info(f"価格列 '{price_col}' では価格変動が見つかりませんでした。")
+            # st.info(f"価格列 '{price_col}' では価格変動が見つかりませんでした。") # active_price_colsでフィルタ済みなので不要
 
 
-    if not changed:
-        st.info("価格最終変更点検出: いずれの価格列でも変動が見つかりませんでした。")
+    if not changed_in_any_active_col:
+        # active_price_cols が空でなかったのにここに到達する場合、
+        # 例えば、変動はあるが全てNaNになったなどの特殊ケースか、データが極端に少ない場合。
+        st.info("価格最終変更点検出: 価格変動のある列は存在しましたが、具体的な変更点を特定できませんでした（データ不足の可能性など）。")
         return None
     elif last_change_lead_time == float('inf'):
-         # changedがTrueなのにinfのまま -> ロジックエラーの可能性
-         st.error("価格最終変更点検出: 予期せぬエラー。")
+         # changed_in_any_active_col が True なのに inf のまま -> ロジックエラーの可能性
+         st.error("価格最終変更点検出: 予期せぬエラー。変動はあったがリードタイムが無限大のままです。")
          return None
     else:
         # st.info(f"価格最終変更リードタイム: {last_change_lead_time}")

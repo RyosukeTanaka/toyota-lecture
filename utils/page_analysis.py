@@ -5,7 +5,8 @@ import pandas as pd
 import datetime # 保存ファイル名用に追加
 from .constants import ( # constants からインポート
     USAGE_COUNT_COLUMN, TARGET_VARIABLE, BOOKING_DATE_COLUMN,
-    LAG_TARGET_COLUMN, LAG_DAYS, LAG_GROUP_COLS
+    LAG_TARGET_COLUMN, LAG_DAYS, LAG_GROUP_COLS,
+    DATE_COLUMN, CAR_CLASS_COLUMN, LEAD_TIME_COLUMN
 )
 from .data_processing import ( # 相対インポートに変更
     display_exploration,
@@ -14,12 +15,17 @@ from .data_processing import ( # 相対インポートに変更
 from .ui_components import ( # 相対インポートに変更
     render_data_analysis_sidebar_widgets
 )
-from .analysis import analyze_daily_sum_after_date # 相対インポートに変更
+from .analysis import analyze_daily_sum_after_date # analyze_price_change_details_in_range は削除
 from .data_modification import nullify_usage_data_after_date # 相対インポートに変更
 
 # --- データ分析・修正ページ描画関数 ---
 def render_data_analysis_page(data: pd.DataFrame):
     st.title("データ分析・修正")
+    st.markdown("""
+    アップロードされたデータの探索、基本的な統計量の確認、特定条件下でのデータ傾向分析（例：特定予約日以降の日別合計利用台数）、
+    およびデータの修正（指定日以降のデータ無効化、不要な列やNaN行の削除、ラグ特徴量の再計算）を行うことができます。
+    データクレンジングや初期分析に適しています。
+    """)
 
     # --- 前回の更新サマリー表示 --- #
     if 'last_update_summary' in st.session_state and st.session_state['last_update_summary']:
