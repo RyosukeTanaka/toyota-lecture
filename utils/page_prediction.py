@@ -122,6 +122,17 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                     st.subheader("実際の予約曲線")
                     fig_actual = plot_booking_curve(data_filtered_sorted, x_col=LEAD_TIME_COLUMN, y_col=TARGET_VARIABLE, title=f"{selected_date} {selected_car_class} 実際の予約曲線")
                     st.plotly_chart(fig_actual, use_container_width=True)
+
+                    # テーブル表示とダウンロードボタンを追加
+                    with st.expander("グラフデータ詳細"):
+                        st.dataframe(data_filtered_sorted)
+                        csv_actual = data_filtered_sorted.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="💾 実績データをダウンロード",
+                            data=csv_actual,
+                            file_name=f"actual_booking_data_{selected_date}_{selected_car_class}.csv",
+                            mime="text/csv",
+                        )
                 with col2:
                     st.subheader("価格推移")
                     fig_prices = plot_price_trends(data_filtered_sorted, x_col=LEAD_TIME_COLUMN, y_cols=PRICE_COLUMNS, title=f"{selected_date} {selected_car_class} 価格推移")
