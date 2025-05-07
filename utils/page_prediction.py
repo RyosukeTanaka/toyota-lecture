@@ -116,6 +116,32 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
             if LEAD_TIME_COLUMN in data_filtered.columns:
                 data_filtered_sorted = data_filtered.sort_values(by=LEAD_TIME_COLUMN)
 
+                # --- last_change_lt と 価格_トヨタの変動チェックを先に行う ---
+                last_change_lt = None
+                has_toyota_price_changed = False
+                toyota_price_column_name = PRICE_COLUMNS[0] if PRICE_COLUMNS else None # PRICE_COLUMNSが空でないか確認
+
+                if toyota_price_column_name and toyota_price_column_name in data_filtered_sorted.columns:
+                    has_toyota_price_changed = data_filtered_sorted[toyota_price_column_name].nunique(dropna=True) > 1
+                
+                # last_change_lt の計算 (変動があった列のみが対象となる)
+                last_change_lt = find_last_price_change_lead_time(data_filtered_sorted, PRICE_COLUMNS, LEAD_TIME_COLUMN)
+
+                # --- 予測実行ボタンの表示条件 ---
+                run_prediction_disabled = True # デフォルトは無効
+                button_message = None
+
+                if not selected_model_info:
+                    button_message = "モデルが選択されていません。" # これは既にサイドバーで警告されるはず
+                elif not has_toyota_price_changed and toyota_price_column_name:
+                    button_message = f"'{toyota_price_column_name}' に価格変動がありませんでした。価格固定シナリオでの予測は、価格変動があった場合に特に有効です。"
+                    st.warning(button_message)
+                elif last_change_lt is None:
+                    button_message = "主要な価格列に価格変動が見られませんでした。価格固定シナリオでの予測は実行できません。"
+                    st.warning(button_message)
+                else:
+                    run_prediction_disabled = False # 有効化
+
                 # 実際の予約曲線と価格推移グラフ
                 col1, col2 = st.columns(2)
                 with col1:
@@ -140,19 +166,32 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
 
                 # 予測実行セクション
                 if run_prediction:
-                    st.markdown("---")
-                    st.header("予測実行")
-                    with st.spinner('予測を実行中...'):
-                        # モデルのロード
-                        model = load_model(selected_model_info["path"])
-                        
-                        if model is None:
-                            st.error("モデルの読み込みに失敗しました。")
-                            return
-                        
-                        # シナリオ予測（インデントを修正）
-                        last_change_lt = find_last_price_change_lead_time(data_filtered_sorted, PRICE_COLUMNS, LEAD_TIME_COLUMN)
-                        if last_change_lt is not None:
+                    # まず、このページで計算した last_change_lt と has_toyota_price_changed に基づく実行可否を再確認
+                    can_run_scenario_prediction = True
+                    scenario_error_message = None
+
+                    if not has_toyota_price_changed and toyota_price_column_name:
+                        scenario_error_message = f"'{toyota_price_column_name}' に価格変動がありませんでした。価格固定シナリオでの予測は、価格変動があった場合に特に有効です。"
+                        can_run_scenario_prediction = False
+                    elif last_change_lt is None:
+                        scenario_error_message = "主要な価格列に価格変動が見られませんでした。価格固定シナリオでの予測は実行できません。"
+                        can_run_scenario_prediction = False
+                    
+                    if not can_run_scenario_prediction:
+                        st.error(f"予測は実行できませんでした: {scenario_error_message}")
+                    else:
+                        # このelseブロックに到達するのは、last_change_lt が有効な値を持っている場合
+                        st.markdown("---")
+                        st.header("予測実行")
+                        with st.spinner('予測を実行中...'):
+                            # モデルのロード
+                            model = load_model(selected_model_info["path"])
+                            
+                            if model is None:
+                                st.error("モデルの読み込みに失敗しました。")
+                                st.stop() # アプリの実行をここで停止
+                            
+                            # last_change_lt は既に計算済みで、Noneでないことが保証されている
                             st.write(f"価格最終変更リードタイム: {last_change_lt}")
                             data_scenario = create_scenario_data(
                                 data_filtered_sorted, PRICE_COLUMNS, LEAD_TIME_COLUMN,
@@ -419,16 +458,16 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                                                 st.info("**分析結果**: 価格変更による売上への顕著な影響は見られませんでした。")
                                         else:
                                             st.warning("売上計算に必要なデータが不足しているため、売上分析を表示できません。")
-                                except Exception as e:
-                                    st.error(f"予測処理中にエラー: {e}")
+                                except Exception as e_pred_main: # 例外変数名を変更
+                                    st.error(f"予測処理のメインロジックでエラーが発生しました: {e_pred_main}")
+                                    # 詳細なエラー情報をログやデバッグ出力に追加することを検討
+                                    st.exception(e_pred_main) # トレースバックも表示
                                     
                                     # 従来の方法をエクスパンダーに移動
                                     with st.expander("フォールバック予測方法の詳細ログ", expanded=False):
                                         st.warning("フォールバック予測方法を試行します...")
                             else:
                                 st.error("シナリオデータ作成失敗")
-                        else:
-                            st.warning("価格変動が見つからなかったため、最終価格固定シナリオでの予測は実行できません。")
             else:
                 st.warning(f"'{LEAD_TIME_COLUMN}'列なし")
         else:

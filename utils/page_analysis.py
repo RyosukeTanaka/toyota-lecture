@@ -5,7 +5,8 @@ import pandas as pd
 import datetime # 保存ファイル名用に追加
 from .constants import ( # constants からインポート
     USAGE_COUNT_COLUMN, TARGET_VARIABLE, BOOKING_DATE_COLUMN,
-    LAG_TARGET_COLUMN, LAG_DAYS, LAG_GROUP_COLS
+    LAG_TARGET_COLUMN, LAG_DAYS, LAG_GROUP_COLS,
+    DATE_COLUMN, CAR_CLASS_COLUMN, LEAD_TIME_COLUMN, PRICE_COLUMNS
 )
 from .data_processing import ( # 相対インポートに変更
     display_exploration,
@@ -14,7 +15,7 @@ from .data_processing import ( # 相対インポートに変更
 from .ui_components import ( # 相対インポートに変更
     render_data_analysis_sidebar_widgets
 )
-from .analysis import analyze_daily_sum_after_date # 相対インポートに変更
+from .analysis import analyze_daily_sum_after_date, analyze_price_change_details_in_range # 相対インポートに変更
 from .data_modification import nullify_usage_data_after_date # 相対インポートに変更
 
 # --- データ分析・修正ページ描画関数 ---
@@ -166,6 +167,79 @@ def render_data_analysis_page(data: pd.DataFrame):
             st.rerun()
     else:
         st.info("先に上記の「日別合計推移」の分析を実行し、グラフが0になる日付を特定してください。")
+
+    # --- ★★★ 新規セクション: 価格変動点分析 ★★★ ---
+    st.markdown("---")
+    st.header("価格変動点の詳細分析")
+    st.write("指定した利用日の範囲内で、価格が変更されたリードタイムと、その変更前後の価格を表示します。")
+
+    # 日付範囲選択
+    current_data_for_price_analysis = st.session_state.get('processed_data', data)
+    min_analysis_date = None
+    max_analysis_date = None
+    if DATE_COLUMN in current_data_for_price_analysis.columns and pd.api.types.is_datetime64_any_dtype(current_data_for_price_analysis[DATE_COLUMN]):
+        valid_dates_for_price = current_data_for_price_analysis[DATE_COLUMN].dropna().dt.date
+        if not valid_dates_for_price.empty:
+            min_analysis_date = valid_dates_for_price.min()
+            max_analysis_date = valid_dates_for_price.max()
+    
+    if min_analysis_date and max_analysis_date:
+        col_pa1, col_pa2 = st.columns(2)
+        with col_pa1:
+            price_analysis_start_date = st.date_input(
+                "分析開始日（利用日）:", 
+                value=min_analysis_date, 
+                min_value=min_analysis_date, 
+                max_value=max_analysis_date, 
+                key="price_analysis_start"
+            )
+        with col_pa2:
+            price_analysis_end_date = st.date_input(
+                "分析終了日（利用日）:", 
+                value=max_analysis_date, 
+                min_value=price_analysis_start_date, 
+                max_value=max_analysis_date, 
+                key="price_analysis_end"
+            )
+        
+        analyze_price_changes_button = st.button("価格変動点を分析", key="analyze_price_changes")
+
+        if analyze_price_changes_button:
+            with st.spinner("価格変動点を分析中..."):
+                # ★★★ 変更点: 分析対象の価格列を「価格_トヨタ」のみに限定 ★★★
+                target_price_col_for_analysis = [PRICE_COLUMNS[0]] if PRICE_COLUMNS else [] # PRICE_COLUMNSの最初の要素（価格_トヨタを想定）
+                if not target_price_col_for_analysis:
+                    st.error("分析対象の価格列（例: 価格_トヨタ）が定数ファイルで定義されていません。")
+                    st.stop()
+                    
+                price_change_df = analyze_price_change_details_in_range(
+                    data=current_data_for_price_analysis,
+                    start_date=price_analysis_start_date,
+                    end_date=price_analysis_end_date,
+                    date_col=DATE_COLUMN,
+                    car_class_col=CAR_CLASS_COLUMN,
+                    lead_time_col=LEAD_TIME_COLUMN,
+                    price_cols=target_price_col_for_analysis 
+                )
+            
+            if not price_change_df.empty:
+                st.subheader("価格変動点 詳細")
+                st.dataframe(price_change_df)
+                
+                csv_price_changes = price_change_df.to_csv(index=False).encode('utf-8-sig') # utf-8-sig でExcel対応
+                download_filename_price_changes = f"price_change_details_{price_analysis_start_date}_to_{price_analysis_end_date}.csv"
+                st.download_button(
+                    label="💾 価格変動点データをダウンロード",
+                    data=csv_price_changes,
+                    file_name=download_filename_price_changes,
+                    mime="text/csv",
+                    key="download_price_changes_button"
+                )
+            # else の場合のメッセージは analyze_price_change_details_in_range 内で表示される想定
+
+    else:
+        st.info("価格変動分析のためには、データに有効な利用日情報が必要です。")
+    # --- ★★★ ここまで新規セクション ★★★ ---
 
     # --- 列削除セクション --- #
     st.markdown("---")
