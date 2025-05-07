@@ -1,0 +1,4 @@
+Model,MAE,MSE,RMSE,R2,RMSLE,MAPE,TT (Sec)
+Gradient Boosting Regressor,0.5117,0.5973,0.7457,0.684,0.3144,0.3552,0.922
+Light Gradient Boosting Machine,0.5586,0.7117,0.8175,0.6189,0.3488,0.3838,0.358
+Extreme Gradient Boosting,0.6084,0.8441,0.8872,0.5646,0.3732,0.4307,0.78

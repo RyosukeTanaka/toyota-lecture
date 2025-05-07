@@ -1,0 +1,40 @@
+{
+  "model_name": "ALLDATA1_C1",
+  "model_type": "GradientBoostingRegressor",
+  "target_variable": "利用台数累積",
+  "selected_features": [
+    "利用台数累積_lag30",
+    "価格差",
+    "価格比",
+    "ja_name",
+    "車両クラス"
+  ],
+  "car_class": "C1",
+  "creation_date": "20250506_172622",
+  "metrics": {
+    "MAE": 2.5293,
+    "MSE": 22.939,
+    "RMSE": 4.3262,
+    "R2": 0.7721,
+    "RMSLE": 0.4699
+  },
+  "model_columns": [
+    "車両クラス",
+    "利用日",
+    "リードタイム",
+    "予約日",
+    "利用台数",
+    "ja_name",
+    "リードタイム_計算済",
+    "価格差",
+    "価格比",
+    "利用台数累積_lag30",
+    "利用台数累積"
+  ],
+  "categorical_features": [
+    "ja_name",
+    "車両クラス"
+  ],
+  "row_count": 119163,
+  "comparison_results_path": "saved_models\\ALLDATA1_C1_20250506_172622_comparison.csv"
+}

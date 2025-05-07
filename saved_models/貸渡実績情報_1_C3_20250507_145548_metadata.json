@@ -1,0 +1,40 @@
+{
+  "model_name": "貸渡実績情報_1_C3",
+  "model_type": "GradientBoostingRegressor",
+  "target_variable": "利用台数累積",
+  "selected_features": [
+    "利用台数累積_lag30",
+    "価格差",
+    "価格比",
+    "ja_name",
+    "車両クラス"
+  ],
+  "car_class": "C3",
+  "creation_date": "20250507_145548",
+  "metrics": {
+    "MAE": 0.9307,
+    "MSE": 2.4069,
+    "RMSE": 1.4706,
+    "R2": 0.6785,
+    "RMSLE": 0.3775
+  },
+  "model_columns": [
+    "車両クラス",
+    "利用日",
+    "リードタイム",
+    "予約日",
+    "利用台数",
+    "ja_name",
+    "利用台数累積_lag30",
+    "リードタイム_計算済",
+    "価格差",
+    "価格比",
+    "利用台数累積"
+  ],
+  "categorical_features": [
+    "ja_name",
+    "車両クラス"
+  ],
+  "row_count": 131087,
+  "comparison_results_path": "saved_models\\貸渡実績情報_1_C3_20250507_145548_comparison.csv"
+}

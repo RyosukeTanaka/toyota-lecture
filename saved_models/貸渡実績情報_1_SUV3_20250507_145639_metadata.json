@@ -1,0 +1,40 @@
+{
+  "model_name": "貸渡実績情報_1_SUV3",
+  "model_type": "GradientBoostingRegressor",
+  "target_variable": "利用台数累積",
+  "selected_features": [
+    "利用台数累積_lag30",
+    "価格差",
+    "価格比",
+    "ja_name",
+    "車両クラス"
+  ],
+  "car_class": "SUV3",
+  "creation_date": "20250507_145639",
+  "metrics": {
+    "MAE": 0.3499,
+    "MSE": 0.3919,
+    "RMSE": 0.6038,
+    "R2": 0.263,
+    "RMSLE": 0.2885
+  },
+  "model_columns": [
+    "車両クラス",
+    "利用日",
+    "リードタイム",
+    "予約日",
+    "利用台数",
+    "ja_name",
+    "利用台数累積_lag30",
+    "リードタイム_計算済",
+    "価格差",
+    "価格比",
+    "利用台数累積"
+  ],
+  "categorical_features": [
+    "ja_name",
+    "車両クラス"
+  ],
+  "row_count": 59466,
+  "comparison_results_path": "saved_models\\貸渡実績情報_1_SUV3_20250507_145639_comparison.csv"
+}
