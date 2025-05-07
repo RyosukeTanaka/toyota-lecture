@@ -93,7 +93,14 @@ def render_price_analysis_page(data: pd.DataFrame):
             
             if not price_change_df.empty:
                 st.subheader("価格変動点 詳細")
-                st.dataframe(price_change_df)
+                st.dataframe(
+                    price_change_df.style.format({
+                        "変更前価格": "{:,.0f}", # 小数点以下なし、カンマ区切り
+                        "変更後価格": "{:,.0f}", # 小数点以下なし、カンマ区切り
+                        # 必要に応じて他の数値列もフォーマット指定可能
+                        # "変更リードタイム": "{}" # 文字列としてそのままなど
+                    })
+                )
 
                 st.subheader("価格変動サマリー")
                 summary_cols = st.columns(2)
