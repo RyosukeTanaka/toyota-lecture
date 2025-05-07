@@ -17,6 +17,7 @@ from .ui_components import ( # 相対インポートに変更
 )
 from .analysis import analyze_daily_sum_after_date, analyze_price_change_details_in_range # 相対インポートに変更
 from .data_modification import nullify_usage_data_after_date # 相対インポートに変更
+from .visualization import plot_price_change_lead_time_distribution, plot_price_change_magnitude_scatter
 
 # --- データ分析・修正ページ描画関数 ---
 def render_data_analysis_page(data: pd.DataFrame):
@@ -185,10 +186,32 @@ def render_data_analysis_page(data: pd.DataFrame):
     
     if min_analysis_date and max_analysis_date:
         col_pa1, col_pa2 = st.columns(2)
+        
+        # --- ★★★ デフォルト日付の設定と範囲チェック ★★★ ---
+        default_start_date = datetime.date(2025, 4, 1)
+        default_end_date = datetime.date(2025, 4, 14)
+
+        # デフォルト開始日がデータ範囲外の場合、範囲内にクリップ
+        if default_start_date < min_analysis_date:
+            actual_default_start = min_analysis_date
+        elif default_start_date > max_analysis_date:
+            actual_default_start = max_analysis_date # 最大日を超える場合は最大日に
+        else:
+            actual_default_start = default_start_date
+
+        # デフォルト終了日がデータ範囲外、または開始日より前になる場合、範囲内にクリップ
+        if default_end_date > max_analysis_date:
+            actual_default_end = max_analysis_date
+        elif default_end_date < actual_default_start: # 開始日より前になった場合
+            actual_default_end = actual_default_start # 開始日と同じにするか、最大日にするか。ここでは開始日に合わせる。
+        else:
+            actual_default_end = default_end_date
+        # --- ★★★ ここまで ★★★ ---
+            
         with col_pa1:
             price_analysis_start_date = st.date_input(
                 "分析開始日（利用日）:", 
-                value=min_analysis_date, 
+                value=actual_default_start, # ★ 修正
                 min_value=min_analysis_date, 
                 max_value=max_analysis_date, 
                 key="price_analysis_start"
@@ -196,8 +219,8 @@ def render_data_analysis_page(data: pd.DataFrame):
         with col_pa2:
             price_analysis_end_date = st.date_input(
                 "分析終了日（利用日）:", 
-                value=max_analysis_date, 
-                min_value=price_analysis_start_date, 
+                value=actual_default_end, # ★ 修正
+                min_value=price_analysis_start_date, # 開始日は動的に変更されるので、ここは元のまま
                 max_value=max_analysis_date, 
                 key="price_analysis_end"
             )
@@ -225,6 +248,36 @@ def render_data_analysis_page(data: pd.DataFrame):
             if not price_change_df.empty:
                 st.subheader("価格変動点 詳細")
                 st.dataframe(price_change_df)
+                
+                # --- ★★★ グラフ表示の追加 ★★★ ---
+                st.subheader("価格変動 可視化")
+                
+                # 利用日ごとのリードタイム分布
+                fig_lt_dist_date = plot_price_change_lead_time_distribution(
+                    price_change_df, 
+                    group_by_col="利用日",
+                    title_prefix="利用日別 "
+                )
+                if fig_lt_dist_date.data: # データがあれば表示
+                    st.plotly_chart(fig_lt_dist_date, use_container_width=True)
+                
+                # 車両クラスごとのリードタイム分布
+                fig_lt_dist_class = plot_price_change_lead_time_distribution(
+                    price_change_df, 
+                    group_by_col="車両クラス",
+                    title_prefix="車両クラス別 "
+                )
+                if fig_lt_dist_class.data: # データがあれば表示
+                    st.plotly_chart(fig_lt_dist_class, use_container_width=True)
+                    
+                # リードタイムと価格変動幅の散布図
+                fig_magnitude_scatter = plot_price_change_magnitude_scatter(
+                    price_change_df,
+                    car_class_col="車両クラス" # サンプルデータに合わせて修正
+                )
+                if fig_magnitude_scatter.data: # データがあれば表示
+                    st.plotly_chart(fig_magnitude_scatter, use_container_width=True)
+                # --- ★★★ ここまでグラフ表示 ★★★ ---
                 
                 csv_price_changes = price_change_df.to_csv(index=False).encode('utf-8-sig') # utf-8-sig でExcel対応
                 download_filename_price_changes = f"price_change_details_{price_analysis_start_date}_to_{price_analysis_end_date}.csv"

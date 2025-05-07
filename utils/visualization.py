@@ -330,4 +330,62 @@ def plot_batch_revenue_comparison(
         
     except Exception as e:
         st.error(f"バッチ結果グラフの描画中にエラー: {e}")
+        return go.Figure()
+
+def plot_price_change_lead_time_distribution(df_price_changes: pd.DataFrame, group_by_col: str, lead_time_col: str = "変更リードタイム", title_prefix: str = "") -> go.Figure:
+    """価格変更リードタイムの分布を箱ひげ図で表示する"""
+    if df_price_changes.empty or group_by_col not in df_price_changes.columns or lead_time_col not in df_price_changes.columns:
+        st.warning(f"価格変更リードタイム分布グラフ: データまたは必要な列 ('{group_by_col}', '{lead_time_col}') がありません。")
+        return go.Figure()
+    
+    try:
+        fig = px.box(
+            df_price_changes,
+            x=group_by_col,
+            y=lead_time_col,
+            color=group_by_col,
+            title=f"{title_prefix}{group_by_col}別 価格変更リードタイムの分布",
+            labels={lead_time_col: "変更リードタイム (日)", group_by_col: group_by_col},
+            points="all" # 全てのデータポイントも表示
+        )
+        fig.update_layout(
+            margin=dict(l=20, r=20, t=60, b=20),
+        )
+        if pd.api.types.is_datetime64_any_dtype(df_price_changes[group_by_col]):
+            fig.update_xaxes(title_text="利用日") # X軸が日付の場合のラベル修正
+        return fig
+    except Exception as e:
+        st.error(f"価格変更リードタイム分布グラフの作成中にエラー: {e}")
+        return go.Figure()
+
+def plot_price_change_magnitude_scatter(df_price_changes: pd.DataFrame, lead_time_col: str = "変更リードタイム", car_class_col: str = "車両クラス", title: str = "リードタイムと価格変動幅の関係") -> go.Figure:
+    """変更リードタイムと価格変動幅の関係を散布図で表示する"""
+    required_cols = [lead_time_col, "変更前価格", "変更後価格", car_class_col]
+    if df_price_changes.empty or not all(col in df_price_changes.columns for col in required_cols):
+        missing = [col for col in required_cols if col not in df_price_changes.columns]
+        st.warning(f"価格変動幅散布図: データまたは必要な列 ('{', '.join(missing)}') がありません。")
+        return go.Figure()
+    
+    try:
+        df_plot = df_price_changes.copy()
+        df_plot["価格変動幅"] = df_plot["変更後価格"] - df_plot["変更前価格"]
+        df_plot["価格変動幅_Abs"] = df_plot["価格変動幅"].abs()
+        
+        fig = px.scatter(
+            df_plot,
+            x=lead_time_col,
+            y="価格変動幅",
+            color=car_class_col,
+            size="価格変動幅_Abs",
+            hover_data=["利用日", "変更前価格", "変更後価格"],
+            title=title,
+            labels={lead_time_col: "変更リードタイム (日)", "価格変動幅": "価格変動幅 (円)"}
+        )
+        fig.update_layout(
+            margin=dict(l=20, r=20, t=60, b=20),
+            xaxis_autorange='reversed' # リードタイムなので逆順
+        )
+        return fig
+    except Exception as e:
+        st.error(f"価格変動幅散布図の作成中にエラー: {e}")
         return go.Figure() 
