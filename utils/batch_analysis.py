@@ -430,17 +430,26 @@ def run_batch_prediction(
     return predictions, metadata_list
 
 
-def display_batch_results(metadata_list: List[Dict[str, Any]]):
+def display_batch_results(metadata_list: List[Dict[str, Any]], return_figures: bool = False):
     """バッチ処理結果の集計表示
 
     Parameters
     ----------
     metadata_list : List[Dict[str, Any]]
         バッチ予測のメタデータリスト
+    return_figures : bool, default=False
+        結果のグラフとデータフレームを返すかどうか
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, Any, Any, pd.DataFrame, pd.DataFrame] | None
+        return_figures=Trueの場合、
+        (結果データフレーム, 日付別グラフ, クラス別グラフ, 日付別データ, クラス別データ)
+        を返す
     """
     if not metadata_list:
         st.warning("バッチ処理結果がありません")
-        return
+        return None if not return_figures else (None, None, None, None, None)
         
     # 成功件数・失敗件数を集計
     success_count = sum(1 for meta in metadata_list if meta.get("success", False))
@@ -458,7 +467,7 @@ def display_batch_results(metadata_list: List[Dict[str, Any]]):
             for meta in metadata_list if not meta.get("success", False)
         ])
         st.dataframe(error_df)
-        return
+        return None if not return_figures else (error_df, None, None, None, None)
     
     # 成功したデータの集計
     success_data = [meta for meta in metadata_list if meta.get("success", False)]
@@ -540,4 +549,7 @@ def display_batch_results(metadata_list: List[Dict[str, Any]]):
             {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "モデル": meta.get("model_name", "不明"), "エラー内容": meta.get("error", "不明")}
             for meta in metadata_list if not meta.get("success", False)
         ])
-        st.dataframe(error_df) 
+        st.dataframe(error_df)
+    
+    if return_figures:
+        return result_df, fig, fig2, date_revenue_df, class_revenue_df 

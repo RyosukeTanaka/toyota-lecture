@@ -4,6 +4,17 @@ import plotly.express as px
 import pandas as pd
 import streamlit as st # エラー表示用
 
+# --- 画像保存用のインポート ---
+import os
+import plotly.io as pio
+
+# --- write_image が使えるようにするため ---
+# デフォルトのレンダラーを設定（kaleido必須）
+try:
+    pio.renderers.default = "png"
+except Exception as e:
+    st.warning(f"画像保存機能の初期化に失敗しました: {e}")
+    st.info("バッチ分析結果の画像保存には pip install kaleido コマンドを実行してください。")
 
 def plot_booking_curve(df, x_col, y_col, title="予約曲線"):
     """指定された列を用いて予約曲線（折れ線グラフ）を描画する"""
@@ -311,6 +322,9 @@ def plot_batch_revenue_comparison(
         # X軸日付なら適切な表示形式を設定
         if x_col == "利用日" and not horizontal:
             fig.update_xaxes(type="date", tickformat="%Y-%m-%d")
+        
+        # ファイル保存用に設定を追加
+        fig.update_layout(width=1200, height=800)  # 保存用に大きなサイズを設定
         
         return fig
         

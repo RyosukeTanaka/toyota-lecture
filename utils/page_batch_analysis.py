@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import os
 from typing import Dict, Any, List
 from .constants import (
     TARGET_VARIABLE, DATE_COLUMN, PRICE_COLUMNS, LEAD_TIME_COLUMN,
@@ -11,6 +12,97 @@ from .constants import (
 from .ui_components import render_prediction_sidebar_widgets
 from .model_storage import load_model, get_model_metadata, list_saved_models
 from .batch_analysis import run_batch_prediction, display_batch_results
+from .visualization import plot_batch_revenue_comparison
+
+
+def save_batch_results_to_folder(
+    metadata_list: List[Dict[str, Any]], 
+    date_revenue_df: pd.DataFrame, 
+    class_revenue_df: pd.DataFrame,
+    result_df: pd.DataFrame,
+    fig_date: Any,
+    fig_class: Any
+) -> str:
+    """バッチ分析結果をローカルフォルダに保存する
+
+    Parameters
+    ----------
+    metadata_list : List[Dict[str, Any]]
+        バッチ予測のメタデータリスト
+    date_revenue_df : pd.DataFrame
+        日付別売上差額データフレーム
+    class_revenue_df : pd.DataFrame
+        車両クラス別売上差額データフレーム
+    result_df : pd.DataFrame
+        詳細結果データフレーム
+    fig_date : Any
+        日付別売上差額グラフ
+    fig_class : Any
+        車両クラス別売上差額グラフ
+
+    Returns
+    -------
+    str
+        保存先フォルダのパス
+    """
+    # 結果保存用のフォルダを作成
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_dir = f"batch_results_{timestamp}"
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+    
+    # CSVデータの保存
+    result_df.to_csv(f"{results_dir}/batch_analysis_results.csv", index=False, encoding='utf-8-sig')
+    date_revenue_df.to_csv(f"{results_dir}/date_revenue_summary.csv", index=False, encoding='utf-8-sig')
+    class_revenue_df.to_csv(f"{results_dir}/class_revenue_summary.csv", index=False, encoding='utf-8-sig')
+    
+    # グラフの保存
+    fig_date.write_image(f"{results_dir}/date_revenue_chart.png")
+    fig_class.write_image(f"{results_dir}/class_revenue_chart.png")
+    fig_date.write_html(f"{results_dir}/date_revenue_chart.html")
+    fig_class.write_html(f"{results_dir}/class_revenue_chart.html")
+    
+    # サマリーテキストの保存
+    success_count = sum(1 for meta in metadata_list if meta.get("success", False))
+    fail_count = len(metadata_list) - success_count
+    
+    # 成功したデータの集計
+    success_data = [meta for meta in metadata_list if meta.get("success", False)]
+    
+    # 売上差額の合計
+    total_actual = sum(meta.get("revenue_actual", 0) for meta in success_data)
+    total_predicted = sum(meta.get("revenue_predicted", 0) for meta in success_data)
+    total_difference = sum(meta.get("revenue_difference", 0) for meta in success_data)
+    
+    with open(f"{results_dir}/summary.txt", "w", encoding='utf-8') as f:
+        f.write(f"バッチ分析サマリー\n")
+        f.write(f"実行日時: {timestamp}\n")
+        f.write(f"=================================\n")
+        f.write(f"処理総数: {len(metadata_list)}件\n")
+        f.write(f"成功: {success_count}件, 失敗: {fail_count}件\n\n")
+        f.write(f"売上集計結果:\n")
+        f.write(f"実績総売上: {int(total_actual):,}円\n")
+        f.write(f"予測総売上（価格固定）: {int(total_predicted):,}円\n")
+        f.write(f"売上差額（実績-予測）: {int(total_difference):,}円\n\n")
+        
+        if total_difference > 0:
+            f.write(f"全体分析: 期間全体で価格変更により {int(total_difference):,}円 の追加売上が発生したと推定されます。価格戦略は有効に機能しています。\n")
+        elif total_difference < 0:
+            f.write(f"全体分析: 期間全体で価格変更により {abs(int(total_difference)):,}円 の売上減少があったと推定されます。価格戦略の見直しが必要かもしれません。\n")
+        else:
+            f.write(f"全体分析: 期間全体で価格変更による売上への顕著な影響は見られませんでした。\n")
+    
+    # 失敗詳細の保存
+    error_data = [meta for meta in metadata_list if not meta.get("success", False)]
+    if error_data:
+        error_df = pd.DataFrame([
+            {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "モデル": meta.get("model_name", "不明"), "エラー内容": meta.get("error", "不明")}
+            for meta in error_data
+        ])
+        error_df.to_csv(f"{results_dir}/error_details.csv", index=False, encoding='utf-8-sig')
+    
+    st.success(f"🗂️ 分析結果をフォルダに保存しました: {os.path.abspath(results_dir)}")
+    return os.path.abspath(results_dir)
 
 
 def render_batch_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
@@ -265,6 +357,10 @@ def render_batch_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
         
         st.info(f"処理予定の組み合わせ: 日付 {len(date_range)}個 × 車両クラス {len(car_classes)}個 = 合計 {total_combinations}件")
         st.warning(f"処理時間目安: 約 {estimated_time:.1f}秒（{estimated_time/60:.1f}分）")
+        
+        # 結果保存チェックボックス
+        save_results = st.checkbox("結果をローカルフォルダに保存する", value=True, 
+                                help="チェックすると、分析結果のグラフ、CSVファイル、サマリーをローカルフォルダに保存します。")
     
     # 実行ボタン
     run_batch = False
@@ -323,9 +419,146 @@ def render_batch_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
             )
             
             # 結果表示
-            display_batch_results(metadata_list)
+            result_df, fig_date, fig_class, date_revenue_df, class_revenue_df = display_batch_results(metadata_list, return_figures=True)
+            
+            # 結果をローカルフォルダに保存
+            if save_results and result_df is not None:
+                saved_folder = save_batch_results_to_folder(
+                    metadata_list, 
+                    date_revenue_df, 
+                    class_revenue_df,
+                    result_df,
+                    fig_date,
+                    fig_class
+                )
     
     # データプレビュー（常に表示しておく）
     st.markdown("---")
     st.subheader("データプレビュー")
     st.dataframe(data.head()) 
+
+
+def display_batch_results(metadata_list: List[Dict[str, Any]], return_figures: bool = False):
+    """バッチ処理結果の集計表示
+
+    Parameters
+    ----------
+    metadata_list : List[Dict[str, Any]]
+        バッチ予測のメタデータリスト
+    return_figures : bool, default=False
+        結果のグラフとデータフレームを返すかどうか
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, Any, Any, pd.DataFrame, pd.DataFrame] | None
+        return_figures=Trueの場合、
+        (結果データフレーム, 日付別グラフ, クラス別グラフ, 日付別データ, クラス別データ)
+        を返す
+    """
+    if not metadata_list:
+        st.warning("バッチ処理結果がありません")
+        return None if not return_figures else (None, None, None, None, None)
+        
+    # 成功件数・失敗件数を集計
+    success_count = sum(1 for meta in metadata_list if meta.get("success", False))
+    fail_count = len(metadata_list) - success_count
+    
+    st.metric("処理総数", f"{len(metadata_list)}件", f"成功: {success_count}件, 失敗: {fail_count}件")
+    
+    # すべての処理が失敗した場合の処理
+    if success_count == 0:
+        st.error("すべての処理が失敗しました")
+        # 失敗詳細はここで表示
+        st.subheader("失敗詳細")
+        error_df = pd.DataFrame([
+            {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "モデル": meta.get("model_name", "不明"), "エラー内容": meta.get("error", "不明")}
+            for meta in metadata_list if not meta.get("success", False)
+        ])
+        st.dataframe(error_df)
+        return None if not return_figures else (error_df, None, None, None, None)
+    
+    # 成功したデータの集計
+    success_data = [meta for meta in metadata_list if meta.get("success", False)]
+    
+    # 売上差額の合計
+    total_actual = sum(meta.get("revenue_actual", 0) for meta in success_data)
+    total_predicted = sum(meta.get("revenue_predicted", 0) for meta in success_data)
+    total_difference = sum(meta.get("revenue_difference", 0) for meta in success_data)
+    
+    # 集計メトリクス表示
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("実績総売上", f"{int(total_actual):,}円")
+    with col2:
+        st.metric("予測総売上（価格固定）", f"{int(total_predicted):,}円")
+    with col3:
+        delta_color = "normal" if total_difference >= 0 else "inverse"
+        st.metric("売上差額（実績-予測）", f"{int(total_difference):,}円", 
+                delta=f"{int(total_difference):,}円", delta_color=delta_color)
+    
+    # 詳細データフレーム作成
+    result_df = pd.DataFrame([
+        {
+            "利用日": meta.get("date"),
+            "車両クラス": meta.get("car_class"),
+            "使用モデル": meta.get("model_name", "不明"),
+            "価格変更リードタイム": meta.get("last_change_lt"),
+            "実績売上": int(meta.get("revenue_actual", 0)),
+            "予測売上": int(meta.get("revenue_predicted", 0)),
+            "売上差額": int(meta.get("revenue_difference", 0))
+        }
+        for meta in success_data
+    ])
+    
+    # 詳細データ表示（ソートあり）
+    st.subheader("詳細結果")
+    st.dataframe(result_df.sort_values(by=["利用日", "車両クラス"]))
+    
+    # グラフ表示（日付ごとの集計）
+    st.subheader("日付別売上差額")
+    date_revenue_df = result_df.groupby("利用日").agg({
+        "実績売上": "sum",
+        "予測売上": "sum",
+        "売上差額": "sum"
+    }).reset_index()
+    
+    fig_date = plot_batch_revenue_comparison(date_revenue_df, "利用日")
+    st.plotly_chart(fig_date, use_container_width=True)
+    
+    # グラフ表示（車両クラスごとの集計）
+    st.subheader("車両クラス別売上差額")
+    class_revenue_df = result_df.groupby("車両クラス").agg({
+        "実績売上": "sum",
+        "予測売上": "sum",
+        "売上差額": "sum"
+    }).reset_index()
+    
+    fig_class = plot_batch_revenue_comparison(class_revenue_df, "車両クラス", horizontal=True)
+    st.plotly_chart(fig_class, use_container_width=True)
+    
+    # CSVダウンロード機能
+    csv = result_df.to_csv(index=False).encode('utf-8')
+    filename = f"batch_analysis_results_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    st.download_button("💾 集計結果をダウンロード", csv, filename, "text/csv")
+    
+    # 要約テキスト
+    if total_difference > 0:
+        st.success(f"**全体分析**: 期間全体で価格変更により **{int(total_difference):,}円** の追加売上が発生したと推定されます。価格戦略は有効に機能しています。")
+    elif total_difference < 0:
+        st.warning(f"**全体分析**: 期間全体で価格変更により **{abs(int(total_difference)):,}円** の売上減少があったと推定されます。価格戦略の見直しが必要かもしれません。")
+    else:
+        st.info("**全体分析**: 期間全体で価格変更による売上への顕著な影響は見られませんでした。")
+        
+    # 失敗詳細をページの最下部に表示
+    if fail_count > 0:
+        st.markdown("---")
+        st.subheader("失敗詳細")
+        error_df = pd.DataFrame([
+            {"日付": meta.get("date"), "車両クラス": meta.get("car_class"), "モデル": meta.get("model_name", "不明"), "エラー内容": meta.get("error", "不明")}
+            for meta in metadata_list if not meta.get("success", False)
+        ])
+        st.dataframe(error_df)
+    
+    if return_figures:
+        return result_df, fig_date, fig_class, date_revenue_df, class_revenue_df
+    return None 
