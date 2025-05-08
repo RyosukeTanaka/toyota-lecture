@@ -511,12 +511,13 @@ def batch_predict_date(
                  change_lead_time=last_change_lt_for_scenario
             )
 
+            # ★★★ Ensure all breakdown values are stored in meta ★★★
             result_meta["revenue_actual"] = total_actual
             result_meta["revenue_predicted"] = total_predicted_hybrid
             result_meta["revenue_difference"] = total_difference
-            result_meta["revenue_actual_before"] = actual_before
-            result_meta["revenue_actual_after"] = actual_after
-            result_meta["revenue_predicted_after"] = predicted_after
+            result_meta["revenue_actual_before"] = actual_before # Store value from function
+            result_meta["revenue_actual_after"] = actual_after   # Store value from function
+            result_meta["revenue_predicted_after"] = predicted_after # Store value from function
             result_meta["success"] = True
             return predictions_result, result_meta
         

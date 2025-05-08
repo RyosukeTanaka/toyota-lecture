@@ -57,8 +57,13 @@ def save_batch_results_to_folder(
                              "利用台数累積（予測）",
                              "追加実績予約数（価格変更後）",
                              "追加予測予約数（価格変更後）",
-                             "変更前価格", "変更後価格", "実績売上",
-                             "予測売上（価格変更影響なし時は実績値）", "売上差額"]
+                             "変更前価格", "変更後価格",
+                             "実績売上（変更前）",
+                             "実績売上（変更後）",
+                             "予測売上（変更後）",
+                             "実績売上",
+                             "予測売上（価格変更影響なし時は実績値）",
+                             "売上差額"]
             cols_to_save = [col for col in expected_cols if col in result_df.columns]
             result_df[cols_to_save].to_csv(os.path.join(results_dir, "batch_analysis_results.csv"), index=False, float_format='%.1f')
         if date_revenue_df is not None and not date_revenue_df.empty:
@@ -188,13 +193,16 @@ def display_batch_results_in_page(metadata_list: Optional[List[Dict[str, Any]]],
              "車両クラス": meta.get("car_class"),
              "使用モデル": meta.get("model_name", "不明"),
              "価格変更リードタイム": meta.get("last_change_lt"),
+             "利用台数累積実績（価格変更時）": meta.get("actual_usage_at_change_lt", np.nan),
              "利用台数累積実績": meta.get("actual_cumulative_usage_end", np.nan),
              "利用台数累積（予測）": meta.get("predicted_cumulative_usage_end", np.nan),
-             "利用台数累積実績（価格変更時）": meta.get("actual_usage_at_change_lt", np.nan),
              "追加実績予約数（価格変更後）": meta.get("additional_actual_bookings", np.nan),
              "追加予測予約数（価格変更後）": meta.get("additional_predicted_bookings", np.nan),
              "変更前価格": meta.get("price_before_change", np.nan),
              "変更後価格": meta.get("price_after_change", np.nan),
+             "実績売上（変更前）": meta.get("revenue_actual_before", np.nan),
+             "実績売上（変更後）": meta.get("revenue_actual_after", np.nan),
+             "予測売上（変更後）": meta.get("revenue_predicted_after", np.nan),
              "実績売上": meta.get("revenue_actual", 0),
              "予測売上（価格変更影響なし時は実績値）": meta.get("revenue_predicted", 0),
              "売上差額": meta.get("revenue_difference", 0)
@@ -212,8 +220,13 @@ def display_batch_results_in_page(metadata_list: Optional[List[Dict[str, Any]]],
         "利用台数累積（予測）",
         "追加実績予約数（価格変更後）",
         "追加予測予約数（価格変更後）",
-        "変更前価格", "変更後価格", "実績売上",
-        "予測売上（価格変更影響なし時は実績値）", "売上差額"
+        "変更前価格", "変更後価格",
+        "実績売上（変更前）",
+        "実績売上（変更後）",
+        "予測売上（変更後）",
+        "実績売上",
+        "予測売上（価格変更影響なし時は実績値）",
+        "売上差額"
     ]
     cols_to_display = [col for col in result_df_numeric.columns if col in display_columns_order]
 
