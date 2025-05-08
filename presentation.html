@@ -289,7 +289,7 @@
     <div class="presentation-container">
         <!-- Slide 1: Title -->
         <section class="slide title-slide">
-            <h1>トヨタレンタカー ダイナミックプライシング効果分析</h1>
+            <h1>トヨタレンタカー<br>ダイナミックプライシング効果分析</h1>
             <p class="subtitle">分析期間: 2025年4月1日 - 2025年4月6日<br>分析店舗: 沖縄那覇空港店</p>
             <div class="notes">
                 <p><em>発表者: AI分析チーム</em></p>
@@ -344,19 +344,22 @@
                         <li>分析アプローチ</li>
                         <li>使用データ概要</li>
                         <li>モデルトレーニング結果サマリー</li>
+                        <li>ダイナミックプライシング効果分析 (全体)</li>
                     </ul>
                 </div>
                 <div class="list-column">
                     <ul>
-                        <li>ダイナミックプライシング効果分析 (全体)</li>
-                        <li>ダイナミックプライシング効果分析 (車両クラス別)</li>
-                        <li>ダイナミックプライシング効果分析 (日別)</li>
+                        <li>ダイナミックプライシング効果分析 (車両クラス別) - グラフ</li>
+                        <li>ダイナミックプライシング効果分析 (車両クラス別) - 分析ポイント</li>
+                        <li>ダイナミックプライシング効果分析 (日別) - グラフ</li>
+                        <li>ダイナミックプライシング効果分析 (日別) - 分析ポイント</li>
+                        <li>価格変動の可視化: リードタイム分布</li>
                         <li>考察と結論</li>
                         <li>今後の展望</li>
                     </ul>
                 </div>
             </div>
-            <div class="notes"><p><em>スライドノート: 本日のアジェンダです。2カラムレイアウトに変更。制限事項スライドを2ページ目に移動したため、目次の順序も変更。</em></p></div>
+            <div class="notes"><p><em>スライドノート: 本日のアジェンダです。項目をグループ化し2カラムに再配置。制限事項スライドを2ページ目に移動。クラス別・日別分析スライドをグラフと説明に分割。</em></p></div>
         </section>
 
         <!-- Slide 4: Introduction (Formerly Slide 3) -->
@@ -404,13 +407,14 @@
             <table>
                 <thead><tr><th>項目</th><th>説明</th></tr></thead>
                 <tbody>
-                    <tr><td>分析期間</td><td>2025年4月1日～2025年4月14日 (*バッチ分析結果は4月1日～4月6日)</td></tr>
+                    <tr><td>分析期間</td><td>2025年4月1日～2025年4月6日</td></tr>
                     <tr><td>対象店舗</td><td>沖縄那覇空港店</td></tr>
+                    <tr><td>モデル学習期間</td><td>2023年1月～2025年3月</td></tr>
                     <tr><td>対象データ</td><td>過去予約実績データ</td></tr>
                     <tr><td>主な特徴量</td><td>予約日、利用日、リードタイム、車両クラス、価格、キャンペーン情報、ラグ特徴量など</td></tr>
                 </tbody>
             </table>
-            <div class="notes"><p><em>スライドノート: 分析に使用したデータの種類や期間、主な特徴量を説明します。対象店舗を明記。バッチ結果の期間を注釈で追加。</em></p></div>
+            <div class="notes"><p><em>スライドノート: 分析に使用したデータの種類や期間、主な特徴量を説明します。モデル学習期間を追加。分析期間を修正。</em></p></div>
         </section>
 
         <!-- Slide 7: Model Training Summary (Formerly Slide 6) -->
@@ -474,26 +478,27 @@
             <div class="notes"><p><em>スライドノート: バッチ処理結果のサマリーを提示し、全体的な効果を説明します。summary.txtの内容を整形して表示。数値を最新化。</em></p></div>
         </section>
 
-        <!-- Slide 9a: Effect by Vehicle Class - Graph (Formerly Slide 8a) -->
-        <section class="slide image-table-slide">
+        <!-- Slide 9: Effect by Vehicle Class - Graph (Formerly part of 9a) -->
+        <section class="slide">
             <h2>ダイナミックプライシング効果分析 (車両クラス別) - グラフ</h2>
-            <div class="image-table-container">
-                <figure class="image-content">
-                    <img src="batch_results_20250508_200814/売上比較分析-クラス別.png" alt="車両クラス別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す横棒グラフ。C1, C3で大きなプラス差額が見られる。">
-                    <figcaption>車両クラス別 売上比較分析</figcaption>
-                </figure>
-                <div class="text-content">
-                    <ul class="analysis-points">
-                        <li>C1、C3クラスでは特に大きな増収効果が見られました。</li>
-                        <li>SUV2、W3クラスでは、ダイナミックプライシングによるわずかな減収が確認されましたが、全体への影響は限定的です。</li>
-                        <li>このグラフは、各車両クラスの売上実績と価格固定シナリオでの予測売上、そしてその差額を視覚的に示しています。</li>
-                    </ul>
-                </div>
-            </div>
-            <div class="notes"><p><em>スライドノート: 車両クラスごとの売上影響をグラフで示します。</em></p></div>
+            <figure style="text-align: center; margin-top: 10px; flex-grow: 1; display: flex; align-items: center; justify-content: center;">
+                <img src="batch_results_20250508_200814/売上比較分析-クラス別.png" alt="車両クラス別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す横棒グラフ。" style="max-width: 100%; max-height: 540px; object-fit: contain; border: 1px solid #eee;">
+            </figure>
+            <div class="notes"><p><em>スライドノート: 車両クラスごとの売上影響を示すグラフ。詳細は次のスライド。</em></p></div>
         </section>
 
-        <!-- Slide 9b: Effect by Vehicle Class - Table (2 columns) (Formerly Slide 8b) -->
+        <!-- Slide 10: Effect by Vehicle Class - Analysis Points (Formerly part of 9a) -->
+        <section class="slide content-slide">
+            <h2>ダイナミックプライシング効果分析 (車両クラス別) - 分析ポイント</h2>
+            <ul class="analysis-points">
+                <li>C1、C3クラスでは特に大きな増収効果が見られました。</li>
+                <li>C2, W2, W3クラスでは減収となりました。SUV2とW1は差額0です。</li>
+                <li>グラフは、各車両クラスの売上実績と価格固定シナリオでの予測売上、そしてその差額を視覚的に示しています。（前スライド参照）</li>
+            </ul>
+            <div class="notes"><p><em>スライドノート: 車両クラス別分析グラフ（前スライド）の補足説明。</em></p></div>
+        </section>
+
+        <!-- Slide 11: Effect by Vehicle Class - Table (2 columns) (Formerly Slide 9b) -->
         <section class="slide content-slide">
             <h2>ダイナミックプライシング効果分析 (車両クラス別) - 詳細データ</h2>
             <div class="two-column-table-container">
@@ -528,26 +533,28 @@
             <div class="notes"><p><em>スライドノート: class_revenue_summary.csv の内容を2列のテーブルで表示。数値を最新化。</em></p></div>
         </section>
 
-        <!-- Slide 10a: Effect by Date - Graph (Formerly Slide 9a) -->
-        <section class="slide image-table-slide">
+        <!-- Slide 12: Effect by Date - Graph (Formerly part of 10a) -->
+        <section class="slide">
             <h2>ダイナミックプライシング効果分析 (日別) - グラフ</h2>
-            <div class="image-table-container">
-                <figure class="image-content">
-                    <img src="batch_results_20250508_200814/売上比較分析-日別.png" alt="2025年4月1日から6日の日別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す縦棒グラフ。">
-                    <figcaption>日別 売上比較分析 (2025/04/01 - 2025/04/06)</figcaption>
-                </figure>
-                <div class="text-content">
-                    <ul class="analysis-points">
-                        <li>分析期間中、ほぼ全ての日でダイナミックプライシングによる増収効果が確認されました。</li>
-                        <li>特に需要が高まる週末や特定日において、価格最適化が効果的に機能していると考えられます。</li>
-                        <li>このグラフは、日ごとの売上実績と価格固定シナリオでの予測売上、その差額を視覚的に示しています。</li>
-                    </ul>
-                </div>
-            </div>
-            <div class="notes"><p><em>スライドノート: 日別の売上影響をグラフで示します。</em></p></div>
+            <figure style="text-align: center; margin-top: 10px; flex-grow: 1; display: flex; align-items: center; justify-content: center;">
+                <img src="batch_results_20250508_200814/売上比較分析-日別.png" alt="2025年4月1日から6日の日別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す縦棒グラフ。" style="max-width: 100%; max-height: 540px; object-fit: contain; border: 1px solid #eee;">
+                <figcaption style="font-size: 0.9em; color: #777; margin-top: 8px;">分析期間: 2025/04/01 - 2025/04/06</figcaption>
+            </figure>
+            <div class="notes"><p><em>スライドノート: 日別の売上影響を示すグラフ。詳細は次のスライド。</em></p></div>
         </section>
 
-        <!-- Slide 10b: Effect by Date - Table (2 columns) (Formerly Slide 9b) -->
+        <!-- Slide 13: Effect by Date - Analysis Points (Formerly part of 10a) -->
+        <section class="slide content-slide">
+            <h2>ダイナミックプライシング効果分析 (日別) - 分析ポイント</h2>
+            <ul class="analysis-points">
+                <li>分析期間 (4/1-6) の多く日でダイナミックプライシングによる増収効果が確認されました (4/2, 4/3を除く)。</li>
+                <li>特に週末(4/5, 4/6)において、価格最適化が効果的に機能していると考えられます。</li>
+                <li>グラフは、日ごとの売上実績と価格固定シナリオでの予測売上、その差額を視覚的に示しています。（前スライド参照）</li>
+            </ul>
+            <div class="notes"><p><em>スライドノート: 日別分析グラフ（前スライド）の補足説明。</em></p></div>
+        </section>
+
+        <!-- Slide 14: Effect by Date - Table (2 columns) (Formerly Slide 10b) -->
         <section class="slide content-slide date-summary-table-slide">
             <h2>ダイナミックプライシング効果分析 (日別) - 詳細データ (2025/04/01 - 2025/04/06)</h2>
             <div class="two-column-table-container">
@@ -579,7 +586,16 @@
             <div class="notes"><p><em>スライドノート: date_revenue_summary.csv の内容を2列のテーブルで表示。数値を最新化し、期間を明記。</em></p></div>
         </section>
 
-        <!-- Slide 11: Discussion and Conclusion (Formerly Slide 10) -->
+        <!-- Slide 15: Price Change Visualization (Formerly Slide 11) -->
+        <section class="slide">
+            <h2>価格変動の可視化: リードタイム分布</h2>
+            <figure style="text-align: center; margin-top: 10px;">
+                <img src="batch_results_20250508_200814/価格変動 可視化.png" alt="利用日別および車両クラス別の価格変更リードタイムの分布を示す箱ひげ図" style="max-width: 100%; max-height: 570px; object-fit: contain; border: 1px solid #eee;">
+            </figure>
+            <div class="notes"><p><em>スライドノート: 価格変更リードタイムの分布を視覚的に示します。上のグラフは利用日別、下のグラフは車両クラス別の分布です。</em></p></div>
+        </section>
+
+        <!-- Slide 16: Discussion and Conclusion (Formerly Slide 12, originally 10) -->
         <section class="slide content-slide">
             <h2>考察と結論</h2>
             <ul>
@@ -594,7 +610,7 @@
             <div class="notes"><p><em>スライドノート: 分析結果から何が言えるか、結論を述べます。error_details.csv のパスを最新化。数値を更新。</em></p></div>
         </section>
 
-        <!-- Slide 12: Future Outlook (Formerly Slide 11, originally 12) -->
+        <!-- Slide 17: Future Outlook (Formerly Slide 13, originally 11, then 12 again) -->
         <section class="slide content-slide">
             <h2>今後の展望</h2>
             <ul>
@@ -606,7 +622,7 @@
             <div class="notes"><p><em>スライドノート: 今回の分析を踏まえ、次に何をすべきか、将来的なアクションアイテムを提案します。</em></p></div>
         </section>
 
-        <!-- Slide 13: Q&A (Formerly Slide 12, originally 13) -->
+        <!-- Slide 18: Q&A (Formerly Slide 14, originally 12, then 13 again) -->
         <section class="slide qa-slide">
             <h2>ご清聴ありがとうございました</h2>
             <p class="subtitle">質疑応答</p>
