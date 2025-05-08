@@ -10,7 +10,7 @@
 2.  **特徴量の準備と無視リストの作成:** UIで選択された数値・カテゴリ特徴量を特定し、選択されなかった特徴量や特定の不要な列 (`曜日_name` など) を無視リスト (`ignore_features`) に追加します。
 3.  **モデル比較と最良モデルの選択:** PyCaretライブラリを使用し、ユーザーが選択した特徴量と機械学習モデルを用いて訓練・評価し、指定された評価指標（RMSE）に基づいて最も性能の良いモデル（最良モデル）とPyCaretのセットアップ結果 (`setup_result`) を選択します。
 4.  **特徴量重要度の表示:** 最良モデルと `setup_result` を用いて特徴量重要度を計算し、グラフとテーブルで表示します。
-5.  **価格最終変更点の検出:** 選択された利用日の実績データから、価格 (`価格_トヨタ`, `価格_オリックス`) が最後に変更されたリードタイムを自動的に検出します。
+5.  **価格最終変更点の検出:** 選択された利用日の実績データから、価格 (`価格_トヨタ`) が最後に変更されたリードタイムを自動的に検出します。
 6.  **予測用シナリオデータの作成:** 上記で検出された最終変更リードタイム `X` とその時点での価格に基づき、「もしリードタイム `X` 以降の価格が、リードタイム `X` 時点の価格で一定だったら」という仮定のシナリオデータを作成します。（価格変更がない場合は、このシナリオでの予測は行いません。）
 7.  **予測の実行:** 選択された最良モデルとシナリオデータを用いて、利用台数の予測値を計算します。
 8.  **結果の表示:** モデル比較の結果（各モデルの評価指標）と、価格変動があった場合には実績データと予測結果（最終価格固定シナリオ）を比較するグラフとテーブルを表示します。表示は価格最終変更リードタイム以降の期間に限定されます。価格変動がなかった場合は、その旨の警告が表示され、比較グラフ・テーブルは表示されません。
@@ -32,28 +32,28 @@ graph TD
     E -- 成功 --> F["モデル比較結果、最良モデル、\nsetup_result 取得"]
     E -- 失敗 --> G["エラー表示\n処理中断"]
     F --> F_imp["特徴量重要度表示\n(get_feature_importance_df, plot)"]
-    F_imp --> H_find["find_last_price_change_lead_time\n(価格最終変更点検出)"]
+    F_imp --> H_find["find_last_price_change_lead_time\n(価格_トヨタの価格最終変更点検出)"]
     H_find --> H_check{最終変更点あり?}
     H_check -- Yes --> H["create_scenario_data\n(scenario='last_change_fixed')"]
-    H_check -- No --> H_warn["警告表示\n(価格変動なし)"]
+    H_check -- No --> H_warn["警告表示\n(価格_トヨタに変動なし)"]
     %% 変動なければ評価結果のみ
     H_warn --> M_comp["モデル評価結果表示"]
     H_warn --> P["処理終了"]
     H --> I["最終価格固定\nシナリオデータ作成"]
-    I --> J["predict_with_model"]
+    I --> J["predict_with_model\n(予測値は四捨五入)"]
     J -- 成功 --> K["予測結果取得"]
     J -- 失敗 --> L["エラー表示\n処理中断"]
     K --> M_comp["モデル評価結果表示"]
-    M_comp --> N["実績vs予測グラフ・テーブル表示\n(最終変更LT以降, 価格変動時のみ)"]
+    M_comp --> N["実績vs予測グラフ・テーブル表示\n(最終変更LT以降, 価格_トヨタ変動時のみ)"]
     N --> P
 
     subgraph "ステップ詳細"
         direction LR
         E_sub["setup_and_compare_models:\n- pycaret.setup(numeric/categorical_features=選択済, ignore_features=無視リスト)\n- pycaret.compare_models(include=選択モデル)\n- pycaret.pull()"]
         F_imp_sub["特徴量重要度:\n- get_feature_importance_df(model, setup_result)\n- plot_feature_importance(df)"]
-        H_find_sub["find_last_price_change_lead_time:\n- 価格列の差分計算\n- 最後の変化点のLT特定"]
-        H_sub["create_scenario_data (last_change_fixed):\n- データコピー\n- 基準LT時点の価格取得\n- 基準LT以降の価格を固定\n- 価格差/比を再計算"]
-        J_sub["predict_with_model:\npycaret.predict_model()"]
+        H_find_sub["find_last_price_change_lead_time:\n- 価格_トヨタ列の差分計算\n- 最後の変化点のLT特定"]
+        H_sub["create_scenario_data (last_change_fixed):\n- データコピー\n- 基準LT時点の価格_トヨタ取得\n- 基準LT以降の価格_トヨタを固定\n- 価格差/比はPRICE_COLUMNSが2つ以上の場合のみ再計算"]
+        J_sub["predict_with_model:\npycaret.predict_model() (batch_analysisでは内部で予測値を四捨五入)"]
     end
 
     E --> E_sub
@@ -93,33 +93,34 @@ graph TD
     *   **出力:** Streamlit画面へのグラフとテーブルの表示。
 
 5.  **価格最終変更点検出 (`find_last_price_change_lead_time` in `utils/data_processing.py`)**
-    *   **入力:** 選択された特定日のデータ (`data_filtered_sorted`)、価格列名リスト (`PRICE_COLUMNS`)、リードタイム列名 (`LEAD_TIME_COLUMN`)。
+    *   **入力:** 選択された特定日のデータ (`data_filtered_sorted`)、価格列名リスト (`PRICE_COLUMNS` = `['価格_トヨタ']`)、リードタイム列名 (`LEAD_TIME_COLUMN`)。
     *   **処理:**
-        *   `価格_トヨタ` と `価格_オリックス` 列で、リードタイム降順で価格が前回から変化した最後の箇所を探します。
-        *   両列の最終変更リードタイムのうち小さい方（利用日に近い方）を返します。変化がなければ `None` を返します。
+        *   `価格_トヨタ` 列で、リードタイム降順で価格が前回から変化した最後の箇所を探します。
+        *   変化がなければ `None` を返します。
     *   **出力:** 最後に価格が変更されたリードタイム (整数)、または `None`。
 
 6.  **予測用シナリオデータ作成 (`create_scenario_data` in `utils/data_processing.py`)**
-    *   **入力:** 特定日のデータ (`data_filtered_sorted`)、価格列名リスト (`PRICE_COLUMNS`)、リードタイム列名 (`LEAD_TIME_COLUMN`)、`scenario_type='last_change_fixed'`、検出された最終変更リードタイム (`change_lead_time`)。
+    *   **入力:** 特定日のデータ (`data_filtered_sorted`)、価格列名リスト (`PRICE_COLUMNS` = `['価格_トヨタ']`)、リードタイム列名 (`LEAD_TIME_COLUMN`)、`scenario_type='last_change_fixed'`、検出された最終変更リードタイム (`change_lead_time`)。
     *   **処理 (`last_change_fixed` シナリオ):**
         *   入力データをコピー。
-        *   `change_lead_time` 時点の実績価格を取得。
-        *   コピーデータで、リードタイムが `change_lead_time` **以下**の行の価格を上記固定価格で上書き。
-        *   価格差 (`価格差`) と価格比 (`価格比`) を再計算。
-    *   **出力:** 価格情報がシナリオに基づいて変更され、価格差/比が再計算されたDataFrame (`data_scenario`)。価格変動がない場合や失敗時は空のDataFrameを返すことがあります。
+        *   `change_lead_time` 時点の実績の `価格_トヨタ` を取得。
+        *   コピーデータで、リードタイムが `change_lead_time` **以下**の行の `価格_トヨタ` を上記固定価格で上書き。
+        *   価格差 (`価格差`) と価格比 (`価格比`) は、`PRICE_COLUMNS` 定数に2つ以上の列が指定されている場合にのみ再計算されます（現在は `['価格_トヨタ']` のみなため、実質再計算されず、NaNのままか元々の値が維持されます）。
+    *   **出力:** `価格_トヨタ` 情報がシナリオに基づいて変更されたDataFrame (`data_scenario`)。`価格_トヨタ` に変動がない場合や失敗時は空のDataFrameを返すことがあります。
 
-7.  **予測実行 (`predict_with_model` in `utils/modeling.py`)**
+7.  **予測実行 (`predict_with_model` in `utils/modeling.py` / バッチ分析の場合は `batch_predict_date` in `utils/batch_analysis.py`)**
     *   **入力:** 最良モデル (`best_model`)、シナリオデータ (`data_scenario`)。
-    *   **処理:** `pycaret.regression.predict_model()` で予測値を計算。
+    *   **処理:** `pycaret.regression.predict_model()` またはモデルの `predict()` メソッドで予測値を計算。バッチ分析 (`batch_predict_date`) の場合は、この予測値が内部で四捨五入されます。
     *   **出力:** 元のシナリオデータに予測結果列 (`prediction_label`) が追加されたDataFrame (`predictions`)。失敗時は空のDataFrame。
 
-8.  **結果の表示 (`app.py`)**
+8.  **結果の表示 (`app.py` または `page_batch_analysis.py`)**
     *   **モデル評価比較結果:** ステップ3で取得した `comparison_results` DataFrame を `st.dataframe()` で表示。
     *   **実績 vs 予測比較グラフ・テーブル:**
-        *   **価格変動が検出され (`last_change_lt is not None`)、かつ予測が成功した場合 (`data_scenario_created is True`) のみ表示されます。**
+        *   **`価格_トヨタ` の変動が検出され (`last_change_lt is not None`)、かつ予測が成功した場合のみ表示されます。**
         *   ステップ7で取得した `predictions` DataFrame と、元の特定日のデータ (`data_filtered_sorted`) を使用します。
         *   **表示するデータは、リードタイムが `last_change_lt` 以下の期間にフィルタリングされます。**
         *   `plot_comparison_curve` 関数 (in `utils/visualization.py`) を呼び出してグラフを生成し、`st.plotly_chart()` で表示。
         *   比較用のデータテーブルも作成し (`st.dataframe()`)。
         *   タイトルには「最終価格固定シナリオ (LT=X) - LT X 以降」のように明記されます。
-        *   **価格変動が検出されなかった場合は、その旨の警告メッセージが表示され、この比較グラフ・テーブルは表示されません。**
+        *   **`価格_トヨタ` の変動が検出されなかった場合は、その旨の警告メッセージが表示され、この比較グラフ・テーブルは表示されません。**
+        *   バッチ分析結果テーブルでは、「追加予測予約数（価格が変更されなかった場合）」という列名で表示され、予測関連の数値は四捨五入された値となります。
