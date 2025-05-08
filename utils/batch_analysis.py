@@ -518,13 +518,57 @@ def batch_predict_date(
                  change_lead_time=last_change_lt_for_scenario
             )
 
-            # ★★★ Ensure all breakdown values are stored in meta ★★★
-            result_meta["revenue_actual"] = total_actual
-            result_meta["revenue_predicted"] = total_predicted_hybrid
-            result_meta["revenue_difference"] = total_difference
-            result_meta["revenue_actual_before"] = actual_before # Store value from function
-            result_meta["revenue_actual_after"] = actual_after   # Store value from function
-            result_meta["revenue_predicted_after"] = predicted_after # Store value from function
+            # ★★★ Ensure all breakdown values are stored in meta (some will be overwritten or re-calculated) ★★★
+            result_meta["revenue_actual_before"] = actual_before
+            result_meta["revenue_actual_after"] = actual_after
+            # Store the detailed calculation of predicted revenue after change for potential reference
+            result_meta["revenue_predicted_after"] = predicted_after
+
+            # Apply the user-specified calculation for "予測売上（価格変更影響なし時は実績値）"
+            # Default to the original detailed calculation (total_predicted_hybrid) if components for the new calculation are missing
+            new_revenue_predicted_value = total_predicted_hybrid
+
+            val_revenue_actual_before = result_meta.get("revenue_actual_before")
+            # additional_predicted_bookings is already populated in result_meta and rounded
+            val_additional_pred_bookings = result_meta.get("additional_predicted_bookings")
+            val_price_before_change = result_meta.get("price_before_change")
+
+            if pd.notna(val_revenue_actual_before) and \
+               pd.notna(val_additional_pred_bookings) and \
+               pd.notna(val_price_before_change):
+                
+                # Calculate revenue from additional predicted bookings using the single 'price_before_change'
+                revenue_from_additional_pred_bookings = val_additional_pred_bookings * val_price_before_change
+                
+                # New "revenue_predicted" based on user's logic
+                new_revenue_predicted_value = val_revenue_actual_before + revenue_from_additional_pred_bookings
+                
+                # Optional: Log if there's a notable difference from the detailed calculation.
+                # This logging should ideally be conditional or removed in a production setting to avoid clutter.
+                # if abs(new_revenue_predicted_value - total_predicted_hybrid) > 0.01: # Tolerance for float comparison
+                #    log_message = f"Revenue Predicted (User Calc): {new_revenue_predicted_value:.2f}, (Detailed Calc from calculate_revenue_difference): {total_predicted_hybrid:.2f}"
+                #    # Depending on logging setup, this might go to Streamlit's UI (st.debug) or console.
+                #    # For now, let's assume a print to console if debugging.
+                #    # print(log_message) # Or use st.caption(log_message) if appropriate in context.
+            else:
+                # If any component is NaN, new_revenue_predicted_value remains total_predicted_hybrid.
+                # An st.warning could be placed here if more verbosity is needed during execution.
+                # st.warning(
+                #    f"売上予測計算のための構成要素の一部が不足しているため({val_revenue_actual_before=}, "
+                #    f"{val_additional_pred_bookings=}, {val_price_before_change=})、"
+                #    f"予測売上は元の詳細計算値 ({total_predicted_hybrid:.0f}) を使用します。"
+                # )
+                pass
+
+
+            result_meta["revenue_actual"] = round(total_actual, 0)
+            result_meta["revenue_predicted"] = round(new_revenue_predicted_value, 0) # Apply new calculation, rounded
+            result_meta["revenue_difference"] = round(total_actual - new_revenue_predicted_value, 0) # Recalculate difference, rounded
+            
+            # Note: revenue_actual_before, revenue_actual_after, revenue_predicted_after in meta
+            # remain as per the detailed calculation from calculate_revenue_difference.
+            # Only the total revenue_predicted and revenue_difference are adjusted based on the user's preferred summarization.
+
             result_meta["success"] = True
             return predictions_result, result_meta
         
