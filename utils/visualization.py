@@ -388,4 +388,51 @@ def plot_price_change_magnitude_scatter(df_price_changes: pd.DataFrame, lead_tim
         return fig
     except Exception as e:
         st.error(f"価格変動幅散布図の作成中にエラー: {e}")
+        return go.Figure()
+
+def plot_price_change_vs_booking_impact(df: pd.DataFrame, x_col: str = "価格変更幅", y_col: str = "追加予約数インパクト", color_col: str = "車両クラス", title="価格変更幅 vs 追加予約数インパクト") -> go.Figure:
+    """価格変更幅と追加予約数インパクトの関係を散布図で表示する"""
+    required_cols = ["変更前価格", "変更後価格", "追加実績予約数（価格変更後）", "追加予測予約数（価格変更後）", color_col, "利用日"]
+    if df.empty or not all(col in df.columns for col in required_cols):
+        st.warning(f"価格変更インパクトグラフ: データまたは必要な列 {required_cols} が不足しています。")
+        return go.Figure()
+
+    df_plot = df.copy()
+    # Calculate derived columns, handling potential errors
+    try:
+        df_plot[x_col] = pd.to_numeric(df_plot["変更後価格"], errors='coerce') - pd.to_numeric(df_plot["変更前価格"], errors='coerce')
+        df_plot[y_col] = pd.to_numeric(df_plot["追加実績予約数（価格変更後）"], errors='coerce') - pd.to_numeric(df_plot["追加予測予約数（価格変更後）"], errors='coerce')
+    except Exception as e:
+        st.error(f"価格変更インパクト計算中にエラー: {e}")
+        return go.Figure()
+
+    # Drop rows where calculation resulted in NaN (due to missing inputs)
+    df_plot = df_plot.dropna(subset=[x_col, y_col])
+
+    if df_plot.empty:
+        st.info("価格変更幅と追加予約数の両方が有効なデータ点がありません。")
+        return go.Figure()
+
+    try:
+        fig = px.scatter(
+            df_plot,
+            x=x_col,
+            y=y_col,
+            color=color_col,
+            hover_data=["利用日", "追加実績予約数（価格変更後）", "追加予測予約数（価格変更後）", "変更前価格", "変更後価格"],
+            title=title,
+            labels={x_col: "価格変更幅 (円)", y_col: "追加予約数インパクト (実績 - 予測)"}
+        )
+
+        # Add a horizontal line at y=0 for reference
+        fig.add_hline(y=0, line_dash="dash", line_color="grey")
+        # Add a vertical line at x=0 for reference
+        fig.add_vline(x=0, line_dash="dash", line_color="grey")
+
+        fig.update_layout(
+            margin=dict(l=20, r=20, t=60, b=20),
+        )
+        return fig
+    except Exception as e:
+        st.error(f"価格変更インパクトグラフ描画中にエラー: {e}")
         return go.Figure() 

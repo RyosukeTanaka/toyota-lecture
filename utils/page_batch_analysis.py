@@ -16,7 +16,7 @@ from .constants import (
 from .ui_components import render_prediction_sidebar_widgets
 from .model_storage import load_model, get_model_metadata, list_saved_models
 from .batch_analysis import run_batch_prediction
-from .visualization import plot_batch_revenue_comparison
+from .visualization import plot_batch_revenue_comparison, plot_price_change_vs_booking_impact
 
 # ---- バックグラウンドで画像を保存するヘルパー関数 (一時的に処理をコメントアウト) ----
 def _save_image_task(fig: Any, filepath: str):
@@ -32,56 +32,66 @@ def _save_image_task(fig: Any, filepath: str):
     return f"Image saving skipped for {filepath}" # スキップしたことを示すメッセージ
 
 def save_batch_results_to_folder(
-    metadata_list: Optional[List[Dict[str, Any]]], 
-    date_revenue_df: Optional[pd.DataFrame], 
+    metadata_list: Optional[List[Dict[str, Any]]],
+    date_revenue_df: Optional[pd.DataFrame],
     class_revenue_df: Optional[pd.DataFrame],
     result_df: Optional[pd.DataFrame],
-    fig_date: Optional[Any], 
-    fig_class: Optional[Any] 
+    fig_date: Optional[Any],
+    fig_class: Optional[Any]
 ) -> Optional[str]:
     """バッチ分析結果をローカルフォルダに保存する"""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = f"batch_results_{timestamp}"
     try:
-        if not os.path.exists(results_dir):
-            os.makedirs(results_dir)
+        if not os.path.exists(results_dir): os.makedirs(results_dir)
     except OSError as e:
         st.error(f"結果保存用フォルダの作成に失敗しました: {results_dir} ({e})")
         return None
-    
+
     try:
         if result_df is not None and not result_df.empty:
-            expected_cols = ["利用日", "車両クラス", "使用モデル", "価格変更リードタイム",
-                             "利用台数累積実績（価格変更時）",
-                             "利用台数累積実績",
-                             "利用台数累積（予測）",
-                             "追加実績予約数（価格変更後）",
-                             "追加予測予約数（価格変更後）",
-                             "変更前価格", "変更後価格",
-                             "実績売上（変更前）",
-                             "実績売上（変更後）",
-                             "予測売上（変更後）",
-                             "実績売上",
-                             "予測売上（価格変更影響なし時は実績値）",
-                             "売上差額"]
-            cols_to_save = [col for col in expected_cols if col in result_df.columns]
-            result_df[cols_to_save].to_csv(os.path.join(results_dir, "batch_analysis_results.csv"), index=False, float_format='%.1f')
-        if date_revenue_df is not None and not date_revenue_df.empty:
-            date_revenue_df.to_csv(os.path.join(results_dir, "date_revenue_summary.csv"), index=False, encoding='utf-8-sig')
-        if class_revenue_df is not None and not class_revenue_df.empty:
-            class_revenue_df.to_csv(os.path.join(results_dir, "class_revenue_summary.csv"), index=False, encoding='utf-8-sig')
-    except Exception as e:
-        st.warning(f"CSVファイルの保存中にエラーが発生しました: {e}")
+            expected_cols = [
+                 "利用日", "車両クラス", "使用モデル", "価格変更リードタイム",
+                 "利用台数累積実績（価格変更時）",
+                 "利用台数累積実績",
+                 "利用台数累積（予測）",
+                 "追加実績予約数（価格変更後）",
+                 "追加予測予約数（価格変更後）",
+                 "変更前価格", "変更後価格",
+                 "実績売上（変更前）",
+                 "実績売上（変更後）",
+                 "予測売上（変更後）",
+                 "実績売上",
+                 "予測売上（価格変更影響なし時は実績値）",
+                 "売上差額"
+            ]
+            
+            cols_present = [col for col in expected_cols if col in result_df.columns]
+            cols_missing = [col for col in expected_cols if col not in result_df.columns]
+            
+            if cols_missing:
+                st.warning(f"CSV保存警告: 以下の列が結果DataFrameに存在しませんでした: {cols_missing}", icon="⚠️")
+
+            if cols_present:
+                st.info(f"CSV保存: 保存する列: {cols_present}")
+                result_df[cols_present].to_csv(
+                    os.path.join(results_dir, "batch_analysis_results.csv"),
+                    index=False,
+                    float_format='%.1f'
+                )
+            else:
+                 st.warning("CSV保存警告: 保存対象の列が結果DataFrameにありませんでした。batch_analysis_results.csv は空になります。", icon="⚠️")
+
+        if date_revenue_df is not None and not date_revenue_df.empty: date_revenue_df.to_csv(os.path.join(results_dir, "date_revenue_summary.csv"), index=False, encoding='utf-8-sig')
+        if class_revenue_df is not None and not class_revenue_df.empty: class_revenue_df.to_csv(os.path.join(results_dir, "class_revenue_summary.csv"), index=False, encoding='utf-8-sig')
+
+    except Exception as e: st.warning(f"CSVファイルの保存中にエラーが発生しました: {e}")
     
     try:
-        if fig_date:
-            fig_date.write_html(os.path.join(results_dir, "date_revenue_chart.html"))
-        if fig_class:
-            fig_class.write_html(os.path.join(results_dir, "class_revenue_chart.html"))
-    except Exception as e:
-        st.warning(f"HTMLグラフの保存中にエラーが発生しました: {e}")
+        if fig_date: fig_date.write_html(os.path.join(results_dir, "date_revenue_chart.html"))
+        if fig_class: fig_class.write_html(os.path.join(results_dir, "class_revenue_chart.html"))
+    except Exception as e: st.warning(f"HTMLグラフの保存中にエラー: {e}")
 
-    # 画像保存タスクの呼び出しを一時的に変更 (もしくは完全にコメントアウト)
     image_tasks = []
     if fig_date:
         image_tasks.append((fig_date, os.path.join(results_dir, "date_revenue_chart.png")))
@@ -89,19 +99,12 @@ def save_batch_results_to_folder(
         image_tasks.append((fig_class, os.path.join(results_dir, "class_revenue_chart.png")))
 
     if image_tasks:
-        # st.info(f"グラフ画像のバックグラウンド生成を開始しました ({len(image_tasks)}件)。完了まで時間がかかる場合があります。保存先: {os.path.abspath(results_dir)}")
-        # try:
-        #     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor: 
-        #         futures = [executor.submit(_save_image_task, fig, fp) for fig, fp in image_tasks]
-        # except Exception as e:
-        #     st.error(f"画像保存タスクの起動中にエラーが発生しました: {e}")
         st.warning("PNG画像の保存処理は、問題調査のため一時的に無効化されています。")
-        # 各タスクに対して同期的に（ただし中身はスキップする）呼び出しを行う
         for fig, fp in image_tasks:
-            _save_image_task(fig, fp) # ヘルパー関数は呼び出すが、中身はスキップ
+            _save_image_task(fig, fp)
 
     try:
-        if metadata_list: 
+        if metadata_list:
             success_count = sum(1 for meta in metadata_list if meta.get("success", False))
             fail_count = len(metadata_list) - success_count
             success_data = [meta for meta in metadata_list if meta.get("success", False)]
@@ -125,8 +128,7 @@ def save_batch_results_to_folder(
                     f.write(f"全体分析: 期間全体で価格変更により {abs(int(total_difference)):,}円 の売上減少があったと推定されます。価格戦略の見直しが必要かもしれません。\n")
                 else:
                     f.write(f"全体分析: 期間全体で価格変更による売上への顕著な影響は見られませんでした。\n")
-    except Exception as e:
-        st.warning(f"サマリーテキストの保存中にエラーが発生しました: {e}")
+    except Exception as e: st.warning(f"サマリーテキスト保存エラー: {e}")
     
     try:
         error_data = [meta for meta in metadata_list if not meta.get("success", False)] if metadata_list else []
@@ -136,10 +138,9 @@ def save_batch_results_to_folder(
                 for meta in error_data
             ])
             error_df.to_csv(os.path.join(results_dir, "error_details.csv"), index=False, encoding='utf-8-sig')
-    except Exception as e:
-        st.warning(f"エラー詳細CSVの保存中にエラーが発生しました: {e}")
+    except Exception as e: st.warning(f"エラー詳細CSV保存エラー: {e}")
     
-    st.success(f"🗂️ CSV、HTML、およびサマリーテキストの保存処理が完了しました。画像保存は一時的にスキップされています。保存先: {os.path.abspath(results_dir)}")
+    st.success(f"🗂️ 結果の保存処理が完了しました。保存先: {os.path.abspath(results_dir)}")
     return os.path.abspath(results_dir)
 
 # この関数をページ内で結果表示用に使用する
@@ -254,6 +255,13 @@ def display_batch_results_in_page(metadata_list: Optional[List[Dict[str, Any]]],
     else:
         st.info("車両クラス別売上データがありません。")
         
+    st.subheader("価格変更幅 vs 追加予約数インパクト")
+    fig_impact = plot_price_change_vs_booking_impact(result_df_numeric)
+    if fig_impact.data:
+        st.plotly_chart(fig_impact, use_container_width=True, key="price_booking_impact_chart")
+    else:
+        pass
+
     st.subheader("詳細結果テーブル")
 
     column_config_dict = {
