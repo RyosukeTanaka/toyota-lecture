@@ -354,12 +354,13 @@
                         <li>ダイナミックプライシング効果分析 (日別) - グラフ</li>
                         <li>ダイナミックプライシング効果分析 (日別) - 分析ポイント</li>
                         <li>価格変動の可視化: リードタイム分布</li>
+                        <li>価格変動の詳細分析: 観察結果</li>
                         <li>考察と結論</li>
                         <li>今後の展望</li>
                     </ul>
                 </div>
             </div>
-            <div class="notes"><p><em>スライドノート: 本日のアジェンダです。項目をグループ化し2カラムに再配置。制限事項スライドを2ページ目に移動。クラス別・日別分析スライドをグラフと説明に分割。</em></p></div>
+            <div class="notes"><p><em>スライドノート: 本日のアジェンダです。項目をグループ化し2カラムに再配置。制限事項スライドを2ページ目に移動。価格変動の詳細分析スライドを追加。</em></p></div>
         </section>
 
         <!-- Slide 4: Introduction (Formerly Slide 3) -->
@@ -482,7 +483,7 @@
         <section class="slide">
             <h2>ダイナミックプライシング効果分析 (車両クラス別) - グラフ</h2>
             <figure style="text-align: center; margin-top: 10px; flex-grow: 1; display: flex; align-items: center; justify-content: center;">
-                <img src="batch_results_20250508_200814/売上比較分析-クラス別.png" alt="車両クラス別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す横棒グラフ。" style="max-width: 100%; max-height: 540px; object-fit: contain; border: 1px solid #eee;">
+                <img src="batch_results_20250508_200814/売上比較分析-クラス別.png" alt="車両クラス別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す横棒グラフ。" style="max-width: 100%; max-height: 485px; object-fit: contain; border: 1px solid #eee;">
             </figure>
             <div class="notes"><p><em>スライドノート: 車両クラスごとの売上影響を示すグラフ。詳細は次のスライド。</em></p></div>
         </section>
@@ -537,7 +538,7 @@
         <section class="slide">
             <h2>ダイナミックプライシング効果分析 (日別) - グラフ</h2>
             <figure style="text-align: center; margin-top: 10px; flex-grow: 1; display: flex; align-items: center; justify-content: center;">
-                <img src="batch_results_20250508_200814/売上比較分析-日別.png" alt="2025年4月1日から6日の日別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す縦棒グラフ。" style="max-width: 100%; max-height: 540px; object-fit: contain; border: 1px solid #eee;">
+                <img src="batch_results_20250508_200814/売上比較分析-日別.png" alt="2025年4月1日から6日の日別の実績売上（青棒）、予測売上（赤棒）、売上差額（緑/赤の菱形マーカー）を示す縦棒グラフ。" style="max-width: 100%; max-height: 485px; object-fit: contain; border: 1px solid #eee;">
                 <figcaption style="font-size: 0.9em; color: #777; margin-top: 8px;">分析期間: 2025/04/01 - 2025/04/06</figcaption>
             </figure>
             <div class="notes"><p><em>スライドノート: 日別の売上影響を示すグラフ。詳細は次のスライド。</em></p></div>
@@ -590,12 +591,25 @@
         <section class="slide">
             <h2>価格変動の可視化: リードタイム分布</h2>
             <figure style="text-align: center; margin-top: 10px;">
-                <img src="batch_results_20250508_200814/価格変動 可視化.png" alt="利用日別および車両クラス別の価格変更リードタイムの分布を示す箱ひげ図" style="max-width: 100%; max-height: 570px; object-fit: contain; border: 1px solid #eee;">
+                <img src="batch_results_20250508_200814/価格変動 可視化.png" alt="利用日別および車両クラス別の価格変更リードタイムの分布を示す箱ひげ図" style="max-width: 100%; max-height: 510px; object-fit: contain; border: 1px solid #eee;">
             </figure>
             <div class="notes"><p><em>スライドノート: 価格変更リードタイムの分布を視覚的に示します。上のグラフは利用日別、下のグラフは車両クラス別の分布です。</em></p></div>
         </section>
 
-        <!-- Slide 16: Discussion and Conclusion (Formerly Slide 12, originally 10) -->
+        <!-- Slide 16: Price Change Detail Analysis (New Slide) -->
+        <section class="slide content-slide">
+            <h2>価格変動の詳細分析: 観察結果</h2>
+            <ul>
+                <li>価格変更は、利用日のかなり前（例: 半年以上前）から直近（約1ヶ月前）まで、多様なリードタイムで行われています。</li>
+                <li>特に利用日の約1ヶ月前（変更リードタイム30日前後）に、多くの車両クラス（C1, C2, C3, W2など）で価格が<strong>上昇</strong>しています。これは設定された早期予約割引の適用期間終了に伴う意図的な価格調整です。</li>
+                <li>一方で、特定のクラスやリードタイム（例: リードタイムが60日以上のC1やW3など）では、価格が<strong>下落</strong>する価格設定も行われています。</li>
+                <li>同一の利用日・車両クラスに対して、期間内に複数回の価格変更（値上げと値下げの繰り返しを含む）が行われている複雑なパターンも存在します（例: C1, C2, C3, W2, W3）。</li>
+                <li>これらの多様な価格変更タイミングと方向性が、前スライドで示したリードタイム分布（箱ひげ図）の形状（特に中央値や四分位範囲、外れ値）に反映されています。</li>
+            </ul>
+             <div class="notes"><p><em>スライドノート: 提供された詳細データから読み取れる価格変動の主な傾向をまとめたスライドです。</em></p></div>
+       </section>
+
+        <!-- Slide 17: Discussion and Conclusion (Formerly Slide 12, originally 10) -->
         <section class="slide content-slide">
             <h2>考察と結論</h2>
             <ul>
@@ -610,7 +624,7 @@
             <div class="notes"><p><em>スライドノート: 分析結果から何が言えるか、結論を述べます。error_details.csv のパスを最新化。数値を更新。</em></p></div>
         </section>
 
-        <!-- Slide 17: Future Outlook (Formerly Slide 13, originally 11, then 12 again) -->
+        <!-- Slide 18: Future Outlook (Formerly Slide 13, originally 11, then 12 again) -->
         <section class="slide content-slide">
             <h2>今後の展望</h2>
             <ul>
@@ -622,7 +636,7 @@
             <div class="notes"><p><em>スライドノート: 今回の分析を踏まえ、次に何をすべきか、将来的なアクションアイテムを提案します。</em></p></div>
         </section>
 
-        <!-- Slide 18: Q&A (Formerly Slide 14, originally 12, then 13 again) -->
+        <!-- Slide 19: Q&A (Formerly Slide 14, originally 12, then 13 again) -->
         <section class="slide qa-slide">
             <h2>ご清聴ありがとうございました</h2>
             <p class="subtitle">質疑応答</p>
