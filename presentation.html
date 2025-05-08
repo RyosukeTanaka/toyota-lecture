@@ -283,6 +283,17 @@
         .agenda-slide .list-column ul li {
             /* margin-bottom: 10px; */ /* Corrected comment syntax. Slightly more spacing for agenda items if needed, or use global */
         }
+
+        /* Slide 17 (Future Outlook) specific styles */
+        .future-outlook-slide li {
+            font-size: 15pt; /* Reduced from 16pt */
+            line-height: 1.45; /* Adjusted line height for smaller font */
+        }
+
+        /* Slide 13 (Date Analysis Points) specific styles */
+        .date-analysis-points-slide .analysis-points li { /* Target li within the specific list */
+            margin-bottom: 16px; /* Increased from 8px */
+        }
     </style>
 </head>
 <body>
@@ -373,7 +384,7 @@
                     </span>
                     <div>
                         <h3>本分析の目的</h3>
-                        <p>本分析では、トヨタレンタカー様が導入されているダイナミックプライシング戦略が、<strong>指定期間（2025年4月1日～6日）の売上</strong>に実際にどのような影響を与えたのかを、データに基づいて定量的に評価します。</p>
+                        <p>本分析では、トヨタレンタカー様が導入されているダイナミックプライシング戦略が、<strong>指定期間（2025年4月1日～6日）の売上</strong>に実際にどのような影響を与えたのかを、データに基づいて定量的に評価。</p>
                     </div>
                 </div>
                 <div class="intro-point">
@@ -382,7 +393,7 @@
                     </span>
                     <div>
                         <h3>期待される成果</h3>
-                        <p>過去実績データを基に構築した機械学習モデルを用い、「価格が固定だった場合」の仮想シナリオと比較することで、価格変更による具体的な売上増減効果を明らかにします。これにより、今後の価格戦略の意思決定に資する洞察を得ることを目指します。</p>
+                        <p>過去実績データを基に構築した機械学習モデルを用い、「価格が固定だった場合」の仮想シナリオと比較することで、価格変更による具体的な売上増減効果を明らかに。これにより、今後の価格戦略の意思決定に資する洞察を得ることを目指す。</p>
                     </div>
                 </div>
             </div>
@@ -393,18 +404,19 @@
         <section class="slide content-slide">
             <h2>分析アプローチ</h2>
             <ul>
-                <li><strong>データ収集と前処理:</strong> 過去の予約実績データを使用し、日付変換、リードタイム計算、価格差・ラグ特徴量などの特徴量エンジニアリングを実施しました。</li>
-                <li><strong>モデル構築:</strong> 車両クラスごとに最適な予測モデルをPyCaretを用いて選択・学習しました。主に勾配ブースティング系のモデルが採用されました。</li>
-                <li><strong>シナリオ設定:</strong> 「価格変動がなかった場合（価格最終変更点以降の価格で固定）」という比較シナリオを設定しました。</li>
-                <li><strong>効果測定:</strong> 実績売上とシナリオ売上を比較し、価格変更による売上差額を算出しました。</li>
+                <li><strong>1. データ準備:</strong> 過去の予約実績データを読み込み、日付/時間関連の特徴量（リードタイム等）や価格関連の特徴量（価格差等）を作成・整備。</li>
+                <li><strong>2. モデル構築 (PyCaret活用):</strong> 車両クラス毎に、利用台数累積を予測する最適な機械学習モデルを探索・学習。主に高精度が期待できる<strong>勾配ブースティング</strong>系のモデルを採用。</li>
+                <li><strong>3. モデル評価 (時系列CV):</strong> モデルの汎化性能を評価するため、データの時間的な順序を考慮した<strong>時系列クロスバリデーション (Time Series Cross-Validation, fold=5)</strong> を採用。</li>
+                <li><strong>4. シナリオ設定:</strong> 価格変動の影響を測るため、「価格が最後に変更された時点の価格で固定された場合」という仮想シナリオを生成。</li>
+                <li><strong>5. 効果測定と可視化:</strong> 実績データとシナリオ予測値を比較し、予約曲線や売上差額を計算・可視化することで、価格変更の効果を定量的に評価。</li>
             </ul>
-            <div class="notes"><p><em>スライドノート: どのような手順で分析を進めたかを説明します。</em></p></div>
+            <div class="notes"><p><em>スライドノート: 分析のステップをより具体的に説明し、使用技術（PyCaret, Gradient Boosting, Time Series CV）を追記。</em></p></div>
         </section>
 
         <!-- Slide 6: Data Overview (Formerly Slide 5) -->
         <section class="slide content-slide">
             <h2>使用データ概要</h2>
-            <p>分析には、トヨタレンタカー（沖縄那覇空港店）の過去数年間にわたる予約実績データを使用しました。主な特徴量として、予約日、利用日、リードタイム、車両クラス、価格情報（トヨタ・オリックス）、キャンペーン情報などが含まれます。</p>
+            <p>分析には、トヨタレンタカー（沖縄那覇空港店）の過去数年間にわたる予約実績データを使用。主な特徴量として、予約日、利用日、リードタイム、車両クラス、価格情報（トヨタ・オリックス）、キャンペーン情報などが含まれる。</p>
             <table>
                 <thead><tr><th>項目</th><th>説明</th></tr></thead>
                 <tbody>
@@ -421,34 +433,34 @@
         <!-- Slide 7: Model Training Summary (Formerly Slide 6) -->
         <section class="slide content-slide model-summary-slide">
             <h2>モデルトレーニング結果サマリー</h2>
-            <p>各車両クラスに対して最適な予測モデル(Gradient Boosting Regressor)を構築しました。主要な評価指標は以下の通りです。</p>
+            <p>各車両クラスに対しPyCaretで最適な予測モデル(主にGradient Boosting Regressor)を構築。多くのクラスで良好な予測精度(R2 > 0.6)を示したが、SUV3クラスは改善の余地あり。</p>
             <div class="two-column-table-container">
                 <div class="table-column">
                     <table>
-                        <thead><tr><th>車両クラス</th><th>モデルタイプ</th><th>RMSE</th><th>R2</th></tr></thead>
+                        <thead><tr><th>車両クラス</th><th>MAE</th><th>RMSE</th><th>R2</th></tr></thead>
                         <tbody>
-                            <tr><td>C1</td><td>GradientBoostingRegressor</td><td>3.9980</td><td>0.7942</td></tr>
-                            <tr><td>C2</td><td>GradientBoostingRegressor</td><td>2.3291</td><td>0.7697</td></tr>
-                            <tr><td>C3</td><td>GradientBoostingRegressor</td><td>1.4706</td><td>0.6785</td></tr>
-                            <tr><td>SUV1</td><td>GradientBoostingRegressor</td><td>0.7759</td><td>0.6532</td></tr>
-                            <tr><td>SUV2</td><td>GradientBoostingRegressor</td><td>0.7185</td><td>0.6902</td></tr>
+                            <tr><td>C1</td><td>2.23</td><td>4.00</td><td>0.794</td></tr>
+                            <tr><td>C2</td><td>1.42</td><td>2.33</td><td>0.770</td></tr>
+                            <tr><td>C3</td><td>0.93</td><td>1.47</td><td>0.679</td></tr>
+                            <tr><td>SUV1</td><td>0.46</td><td>0.78</td><td>0.653</td></tr>
+                            <tr><td>SUV2</td><td>0.47</td><td>0.72</td><td>0.690</td></tr>
                         </tbody>
                     </table>
                 </div>
                 <div class="table-column">
                     <table>
-                        <thead><tr><th>車両クラス</th><th>モデルタイプ</th><th>RMSE</th><th>R2</th></tr></thead>
+                        <thead><tr><th>車両クラス</th><th>MAE</th><th>RMSE</th><th>R2</th></tr></thead>
                         <tbody>
-                            <tr><td>SUV3</td><td>GradientBoostingRegressor</td><td>0.6038</td><td>0.2630</td></tr>
-                            <tr><td>W1</td><td>GradientBoostingRegressor</td><td>0.9584</td><td>0.7154</td></tr>
-                            <tr><td>W2</td><td>GradientBoostingRegressor</td><td>1.4787</td><td>0.6909</td></tr>
-                            <tr><td>W3</td><td>GradientBoostingRegressor</td><td>0.6473</td><td>0.7089</td></tr>
+                            <tr><td>SUV3</td><td>0.35</td><td>0.60</td><td>0.263</td></tr>
+                            <tr><td>W1</td><td>0.58</td><td>0.96</td><td>0.715</td></tr>
+                            <tr><td>W2</td><td>0.95</td><td>1.48</td><td>0.691</td></tr>
+                            <tr><td>W3</td><td>0.39</td><td>0.65</td><td>0.709</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-            <p style="text-align: center; margin-top: 15px;"><em>*RMSEは値が小さいほど、R2は1に近いほど精度が高いことを示します。</em></p>
-            <div class="notes"><p><em>スライドノート: 構築したモデルの精度や種類について触れます。model_summary.mdから主要指標を抜粋・集約して2列で表示。</em></p></div>
+            <p style="text-align: center; margin-top: 15px;"><em>*MAE/RMSE(平均絶対誤差/二乗平均平方根誤差)は0に近いほど、R2(決定係数)は1に近いほど精度が高いことを示す。</em></p>
+            <div class="notes"><p><em>スライドノート: 構築したモデルの精度について、MAE列を追加し、簡単な解釈コメントを追記。数値は小数点以下2-3桁に丸めて表示。</em></p></div>
         </section>
 
         <!-- Slide 8: Overall Dynamic Pricing Effect (Formerly Slide 7) -->
@@ -456,13 +468,13 @@
             <h2>ダイナミックプライシング効果分析 (全体サマリー)</h2>
             <div class="content-image-container">
                 <div class="text-content">
-                    <p>分析期間全体（2025年4月1日～6日）において、ダイナミックプライシング戦略により、<strong>約37.7万円の売上増加</strong>効果があったと推定されます。<br>これは、価格を固定した場合の予測売上と比較して算出されたものです。</p>
+                    <p>分析期間全体（2025年4月1日～6日）において、ダイナミックプライシング戦略により、<strong>約37.7万円の売上増加</strong>効果があったと推定。<br>これは、価格を固定した場合の予測売上と比較して算出したもの。</p>
                     <div class="key-metrics">
                         <div class="metric-item"><span class="metric-label">実績総売上:</span><span class="metric-value">7,169,559円</span></div>
                         <div class="metric-item"><span class="metric-label">予測総売上（価格固定）:</span><span class="metric-value">6,792,547円</span></div>
                         <div class="metric-item"><span class="metric-label">売上差額（実績-予測）:</span><span class="metric-value">377,014円</span> <span class="trend-arrow positive">▲</span></div>
                     </div>
-                    <p style="margin-top: 20px;"><strong>全体分析:</strong> 期間全体で価格変更により 377,014円 の追加売上が発生したと推定されます。価格戦略は有効に機能しています。</p>
+                    <p style="margin-top: 20px;"><strong>全体分析:</strong> 期間全体で価格変更により 377,014円 の追加売上が発生したと推定。価格戦略は有効に機能。</p>
                 </div>
                 <figure class="image-content" style="justify-content: center;">
                     <div style="border: 1px solid #eee; padding: 15px; background-color: #f8f9fa; text-align: left; font-size: 0.9em;">
@@ -492,11 +504,13 @@
         <section class="slide content-slide">
             <h2>ダイナミックプライシング効果分析 (車両クラス別) - 分析ポイント</h2>
             <ul class="analysis-points">
-                <li>C1、C3クラスでは特に大きな増収効果が見られました。</li>
-                <li>C2, W2, W3クラスでは減収となりました。SUV2とW1は差額0です。</li>
-                <li>グラフは、各車両クラスの売上実績と価格固定シナリオでの予測売上、そしてその差額を視覚的に示しています。（前スライド参照）</li>
+                <li><strong>顕著な増収効果:</strong> C1クラス（約+23万円）、C3クラス（約+23万円）では、<strong>分析の制限事項で述べた早期割引終了に伴う意図的な価格上昇</strong>が主な要因となり、大幅な売上増加が見られた。SUV3（約+10万円）、SUV1（約+5万円）でも同様に増収。</li>
+                <li><strong>一部クラスでの減収:</strong> 一方で、W3クラス（約-11万円）、C2クラス（約-8万円）、W2クラス（約-5万円）では、価格固定シナリオと比較して売上が減少。これは、分析期間内に行われた他の価格調整（例: W3での値下げ）や、予測モデルと実績の乖離（<strong>制限事項で触れた競合価格データの精度限界</strong>も影響する可能性）を考慮。</li>
+                <li><strong>差額なし:</strong> SUV2、W1クラスでは、分析期間中に有効な価格変動がなかったか、変動の影響が相殺され、売上差額は0円。</li>
+                <li><strong>全体的な留意点:</strong> この分析は、<strong>制限事項で述べた通り、定義済みの価格ルール変更（特に早期割引終了）の影響を主に評価</strong>しており、リアルタイムな需要連動型価格調整の効果とは異なる側面を持つ点にご注意ください。</li>
+                <li><strong>補足:</strong> 前スライドのグラフは、これらのクラス別の売上差額（実績売上 - 価格固定シナリオでの予測売上）を視覚的に表示。</li>
             </ul>
-            <div class="notes"><p><em>スライドノート: 車両クラス別分析グラフ（前スライド）の補足説明。</em></p></div>
+            <div class="notes"><p><em>スライドノート: 車両クラス別分析グラフ（前スライド）の補足説明。具体的な増減額の目安と考察を追記。分析の制限事項を踏まえた解釈上の注意点を追加。強調表示をstrongタグに変更。</em></p></div>
         </section>
 
         <!-- Slide 11: Effect by Vehicle Class - Table (2 columns) (Formerly Slide 9b) -->
@@ -545,16 +559,17 @@
         </section>
 
         <!-- Slide 13: Effect by Date - Analysis Points (Formerly part of 10a) -->
-        <section class="slide content-slide">
+        <section class="slide content-slide date-analysis-points-slide">
             <h2>ダイナミックプライシング効果分析 (日別) - 分析ポイント</h2>
             <ul class="analysis-points">
-                <li>分析期間 (4/1-6) の多く日でダイナミックプライシングによる増収効果が確認されました (4/2, 4/3を除く)。</li>
-                <li>特に週末(4/5, 4/6)において、価格最適化が効果的に機能していると考えられます。</li>
-                <li>グラフは、日ごとの売上実績と価格固定シナリオでの予測売上、その差額を視覚的に示しています。（前スライド参照）</li>
+                <li><strong>日別効果のばらつき:</strong> 分析期間（4月1日～6日）を通して、価格変更の効果は日によって異なる。</li>
+                <li><strong>増収日:</strong> 4月1日（約+9万円）、4月4日（約+0.4万円）、および特に週末の4月5日（約+13万円）、4月6日（約+23万円）では、価格固定シナリオと比較して明確な増収効果を確認。これは週末の高い需要に対して、価格調整（主に<strong>制限事項</strong>で触れた早期割引終了による値上げ）が収益増につながったことを示唆。</li>
+                <li><strong>減収日:</strong> 一方、4月2日（約-7万円）、4月3日（約-1万円）では売上が減少。これは、特定日の需要変動に対して予測が乖離した可能性や、<strong>制限事項</strong>で述べた競合価格データの精度限界、または他の価格要因の影響を考慮。</li>
+                <li><strong>留意点:</strong> この分析は、主に月替わり前後の<strong>早期割引終了に伴う価格変更</strong>の影響を捉えている。日々の細かな需要変動に対する最適化効果とは異なる可能性がある点にご注意ください。</li>
+                <li><strong>補足:</strong> 前スライドのグラフは、これらの日別の売上差額（実績売上 - 価格固定シナリオでの予測売上）を視覚的に表示。</li>
             </ul>
-            <div class="notes"><p><em>スライドノート: 日別分析グラフ（前スライド）の補足説明。</em></p></div>
+            <div class="notes"><p><em>スライドノート: 日別分析グラフ（前スライド）の補足説明。具体的な増減額、要因考察、制限事項との関連を追記。</em></p></div>
         </section>
-
         <!-- Slide 14: Effect by Date - Table (2 columns) (Formerly Slide 10b) -->
         <section class="slide content-slide date-summary-table-slide">
             <h2>ダイナミックプライシング効果分析 (日別) - 詳細データ (2025/04/01 - 2025/04/06)</h2>
@@ -600,13 +615,13 @@
         <section class="slide content-slide">
             <h2>価格変動の詳細分析: 観察結果</h2>
             <ul>
-                <li>価格変更は、利用日のかなり前（例: 半年以上前）から直近（約1ヶ月前）まで、多様なリードタイムで行われています。</li>
-                <li>特に利用日の約1ヶ月前（変更リードタイム30日前後）に、多くの車両クラス（C1, C2, C3, W2など）で価格が<strong>上昇</strong>しています。これは設定された早期予約割引の適用期間終了に伴う意図的な価格調整です。</li>
-                <li>一方で、特定のクラスやリードタイム（例: リードタイムが60日以上のC1やW3など）では、価格が<strong>下落</strong>する価格設定も行われています。</li>
-                <li>同一の利用日・車両クラスに対して、期間内に複数回の価格変更（値上げと値下げの繰り返しを含む）が行われている複雑なパターンも存在します（例: C1, C2, C3, W2, W3）。</li>
-                <li>これらの多様な価格変更タイミングと方向性が、前スライドで示したリードタイム分布（箱ひげ図）の形状（特に中央値や四分位範囲、外れ値）に反映されています。</li>
+                <li>価格変更は、利用日のかなり前（例: 半年以上前）から直近（約1ヶ月前）まで、多様なリードタイムで実施。</li>
+                <li>特に利用日の約1ヶ月前（変更リードタイム30日前後）に、多くの車両クラス（C1, C2, C3, W2など）で価格が<strong>上昇</strong>。これは設定された早期予約割引の適用期間終了に伴う意図的な価格調整。</li>
+                <li>一方で、特定のクラスやリードタイム（例: リードタイムが60日以上のC1やW3など）では、価格が<strong>下落</strong>する価格設定も実施。</li>
+                <li>同一の利用日・車両クラスに対して、期間内に複数回の価格変更（値上げと値下げの繰り返しを含む）が行われている複雑なパターンも存在。</li>
+                <li>これらの多様な価格変更タイミングと方向性が、前スライドで示したリードタイム分布（箱ひげ図）の形状（特に中央値や四分位範囲、外れ値）に反映。</li>
             </ul>
-             <div class="notes"><p><em>スライドノート: 提供された詳細データから読み取れる価格変動の主な傾向をまとめたスライドです。</em></p></div>
+             <div class="notes"><p><em>スライドノート: 提供された詳細データから読み取れる価格変動の主な傾向をまとめたスライドです。推測的な表現を修正。</em></p></div>
        </section>
 
         <!-- Slide 17: Discussion and Conclusion (Formerly Slide 12, originally 10) -->
@@ -625,15 +640,43 @@
         </section>
 
         <!-- Slide 18: Future Outlook (Formerly Slide 13, originally 11, then 12 again) -->
-        <section class="slide content-slide">
-            <h2>今後の展望</h2>
-            <ul>
-                <li><strong>価格戦略の精緻化:</strong> 車両クラスごとの価格感度分析や、イベント・季節要因をより詳細に組み込んだ価格設定モデルの検討。</li>
-                <li><strong>データ品質向上:</strong> 予測精度向上のため、欠損データへの対応策（補完ロジックの改善、データ収集プロセスの見直しなど）の強化。</li>
-                <li><strong>リアルタイム性向上:</strong> より短期間での価格調整を可能にするためのシステム・プロセス改善。</li>
-                <li><strong>長期的な効果検証:</strong> 定期的な効果測定と、市況変動に合わせたモデルの再学習・チューニングサイクルの確立。</li>
-            </ul>
-            <div class="notes"><p><em>スライドノート: 今回の分析を踏まえ、次に何をすべきか、将来的なアクションアイテムを提案します。</em></p></div>
+        <section class="slide content-slide future-outlook-slide">
+            <h2>今後の展望と次のステップ</h2>
+            <div class="two-column-list-container">
+                <div class="list-column">
+                    <ul>
+                        <li><strong>効果検証のための追加データ収集と分析継続 (最優先):</strong>
+                            <ul>
+                                <li>今回の分析 (4/1-6) は期間が限定的であり、主に定義済み価格ルール変更（早期割引終了）の影響を主に評価。</li>
+                                <li>ダイナミックプライシング戦略全体の有効性を正確に評価するには、<strong>より長期間にわたる継続的なデータ収集と分析が不可欠</strong>。</li>
+                                <li>まずは、次期データバッチ（5月中旬利用可能見込み）の分析結果を待つ必要あり。</li>
+                                <li>価格設定の妥当性を完全に検証するには、<strong>さらにデータが必要となる可能性</strong>あり（例: 6月全体のデータ等）。</li>
+                            </ul>
+                        </li>
+                         <li><strong>価格戦略のさらなる精緻化:</strong>
+                            <ul>
+                                <li>収集された追加データや、精度の高い競合データに基づき、車両クラス別の価格感度分析、イベント・季節要因の組み込み、よりダイナミックな価格調整ロジックの導入を検討。</li>
+                             </ul>
+                         </li>
+                    </ul>
+                </div>
+                <div class="list-column">
+                    <ul>
+                         <li><strong>精度の高い競合価格データの活用:</strong>
+                            <ul>
+                                <li>4月末より、より高頻度で更新される<strong>競合（オリックス）価格データ</strong>の入手を開始。</li>
+                                <li>このデータを活用し、競合の価格戦略をより正確にモデルへ反映させ、予測精度向上と価格戦略の最適化を目指す。</li>
+                            </ul>
+                        </li>
+                         <li><strong>継続的なデータ品質向上とモデル改善:</strong>
+                            <ul>
+                                <li>欠損データへの対応策、モデルの定期的な再学習・チューニングは継続的に実施。</li>
+                             </ul>
+                         </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="notes"><p><em>スライドノート: 今後のアクションについて、データ収集の重要性と競合データの活用を強調し、既存の項目を整理・統合。2カラムレイアウトに変更。</em></p></div>
         </section>
 
         <!-- Slide 19: Q&A (Formerly Slide 14, originally 12, then 13 again) -->
