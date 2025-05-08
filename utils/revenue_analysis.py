@@ -6,39 +6,6 @@ import streamlit as st
 import plotly.graph_objects as go
 from typing import Tuple, Dict, List, Optional, Union, Any
 
-def calculate_daily_change(df: pd.DataFrame, cumulative_col: str) -> pd.Series:
-    """日次変化量（新規予約数）を計算する補助関数
-    
-    Parameters:
-    -----------
-    df: pd.DataFrame
-        累積値を含むデータフレーム（リードタイム降順でソート済み）
-    cumulative_col: str
-        累積値の列名
-        
-    Returns:
-    --------
-    pd.Series: 日次変化量。時間の流れに沿った新規予約数（正の値が増加）
-    """
-    if df.empty or cumulative_col not in df.columns:
-        st.warning(f"日次変化量計算: データが空または列 '{cumulative_col}' が見つかりません。")
-        return pd.Series(dtype='float64')
-    
-    # データがリードタイム降順（大→小）にソートされている前提
-    # 時間の流れに沿った差分を計算するため、後の時点（リードタイム小）- 前の時点（リードタイム大）
-    daily_change = df[cumulative_col].copy()
-    
-    # 初日（リードタイム最大）はそのままの値
-    if len(daily_change) > 1:
-        # 時間の流れに沿った差分計算（隣接する行の差分）
-        # 注意: リードタイム降順なので、現在の値 - 一つ前（リードタイム大きい）の値
-        original_values = daily_change.values.copy()
-        for i in range(1, len(daily_change)):
-            daily_change.iloc[i] = original_values[i] - original_values[i-1]
-    
-    return daily_change
-
-
 def calculate_revenue_difference(
     df_actual: pd.DataFrame,
     df_predicted: pd.DataFrame,
@@ -47,33 +14,11 @@ def calculate_revenue_difference(
     pred_usage_col: str,
     price_col: str,
     change_lead_time: int
-) -> Tuple[pd.DataFrame, float, float, float]:
-    """実績と予測シナリオの売上差額を計算する関数
-    
-    Parameters:
-    -----------
-    df_actual: pd.DataFrame
-        実績データ
-    df_predicted: pd.DataFrame
-        予測データ
-    lead_time_col: str
-        リードタイム列名
-    actual_usage_col: str
-        実績利用台数累積列名
-    pred_usage_col: str
-        予測利用台数累積列名
-    price_col: str
-        価格列名（価格_トヨタを想定）
-    change_lead_time: int
-        価格変更点のリードタイム値
-        
-    Returns:
-    --------
-    Tuple[pd.DataFrame, float, float, float]:
-        - 売上計算結果のデータフレーム
-        - 実績総売上
-        - 予測総売上
-        - 差額（実績 - 予測）
+) -> Tuple[pd.DataFrame, float, float, float, float, float, float]:
+    """実績と予測シナリオの売上差額等を計算 (change_lead_time > 0)
+       予測売上 = 変更前実績 + 変更後予測(旧価格)
+       Returns: revenue_df, total_actual, total_predicted_hybrid, total_difference,
+                actual_before, actual_after, predicted_after
     """
     # 必要な列が揃っているか確認
     required_cols_actual = [lead_time_col, actual_usage_col, price_col]
@@ -85,77 +30,138 @@ def calculate_revenue_difference(
     if missing_actual or missing_predicted:
         missing = list(set(missing_actual + missing_predicted))
         st.error(f"売上計算エラー: 必要な列 ('{', '.join(missing)}') がデータフレームに存在しません。")
-        empty_df = pd.DataFrame()
-        return empty_df, 0.0, 0.0, 0.0
-    
+        return pd.DataFrame(), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
     try:
-        # 結果格納用のDataFrame
-        result_df = pd.DataFrame()
-        
-        # リードタイムで並べ替え（降順: 大きい方から小さい方へ）
-        df_actual_sorted = df_actual.sort_values(by=lead_time_col, ascending=False)
-        df_pred_sorted = df_predicted.sort_values(by=lead_time_col, ascending=False)
-        
-        # 価格変更点以降のデータに絞る
-        df_actual_filtered = df_actual_sorted[df_actual_sorted[lead_time_col] <= change_lead_time]
-        df_pred_filtered = df_pred_sorted[df_pred_sorted[lead_time_col] <= change_lead_time]
-        
-        if df_actual_filtered.empty or df_pred_filtered.empty:
-            st.warning(f"売上計算警告: LT {change_lead_time} 以降のデータが不足しています。")
-            empty_df = pd.DataFrame()
-            return empty_df, 0.0, 0.0, 0.0
-        
-        # 各リードタイムにおける新規予約数の計算（差分）
-        result_df[lead_time_col] = df_actual_filtered[lead_time_col]
-        
-        # 日次変化量の計算（時間の流れに沿った差分）
-        result_df['actual_new_bookings'] = calculate_daily_change(df_actual_filtered, actual_usage_col)
-        result_df['pred_new_bookings'] = calculate_daily_change(df_pred_filtered, pred_usage_col)
-        
-        # 価格の取得
-        result_df['actual_price'] = df_actual_filtered[price_col]
-        
-        # 予測シナリオでは、価格変更点の価格を固定使用
-        fixed_price_row = df_actual_filtered[df_actual_filtered[lead_time_col] == change_lead_time]
-        if not fixed_price_row.empty:
-            fixed_price = fixed_price_row[price_col].iloc[0]
-            result_df['fixed_price'] = fixed_price
+        # --- データ準備 ---
+        df_actual_calc = df_actual[[lead_time_col, actual_usage_col, price_col]].copy()
+        df_pred_calc = df_predicted[[lead_time_col, pred_usage_col]].copy()
+
+        # データ型を数値に変換（エラー時はNaN -> 0）
+        for col in [actual_usage_col, price_col]:
+            df_actual_calc[col] = pd.to_numeric(df_actual_calc[col], errors='coerce').fillna(0)
+        df_pred_calc[pred_usage_col] = pd.to_numeric(df_pred_calc[pred_usage_col], errors='coerce').fillna(0)
+
+        # リードタイムでマージして比較可能にする（外部マージで全リードタイムを保持）
+        df_merged = pd.merge(df_actual_calc, df_pred_calc, on=lead_time_col, how='outer')
+        df_merged = df_merged.sort_values(by=lead_time_col, ascending=False) # ★★★ 降順ソート ★★★
+
+        # --- ★★★ Correct Fixed Price Determination ★★★ ---
+        fixed_price = np.nan # Initialize
+        # Find the price *before* the change (lead time > change_lead_time)
+        data_before_change = df_merged[df_merged[lead_time_col] > change_lead_time]
+        if not data_before_change.empty:
+            # Price just before change is the first row in this descending sorted df
+            fixed_price = data_before_change[price_col].iloc[0]
         else:
-            # 該当するリードタイムがない場合、最も近いリードタイムの価格を使用
-            lt_diff = abs(df_actual_filtered[lead_time_col] - change_lead_time)
-            closest_idx = lt_diff.idxmin()
-            fixed_price = df_actual_filtered.loc[closest_idx, price_col]
-            result_df['fixed_price'] = fixed_price
-            st.warning(f"売上計算警告: LT {change_lead_time} の価格データがないため、最も近いLT {df_actual_filtered.loc[closest_idx, lead_time_col]} の価格 {fixed_price} を使用します。")
-        
-        # 売上の計算
-        result_df['actual_revenue'] = result_df['actual_new_bookings'] * result_df['actual_price']
-        result_df['predicted_revenue'] = result_df['pred_new_bookings'] * result_df['fixed_price']
-        
-        # 累計売上の計算
-        result_df['actual_revenue_cumsum'] = result_df['actual_revenue'].cumsum()
-        result_df['predicted_revenue_cumsum'] = result_df['predicted_revenue'].cumsum()
-        
-        # 差額の計算（実績 - 予測）
-        result_df['revenue_difference'] = result_df['actual_revenue'] - result_df['predicted_revenue']
-        result_df['revenue_difference_cumsum'] = result_df['actual_revenue_cumsum'] - result_df['predicted_revenue_cumsum']
-        
-        # 合計値の計算
-        total_actual = result_df['actual_revenue'].sum()
-        total_predicted = result_df['predicted_revenue'].sum()
-        total_difference = total_actual - total_predicted
-        
-        # NaN値をゼロに変換
-        result_df = result_df.fillna(0)
-        
-        return result_df, total_actual, total_predicted, total_difference
-    
+            # Fallback if no data strictly *before* change_lead_time
+            # Use price *at* change_lead_time if available
+            price_at_change_row = df_merged[df_merged[lead_time_col] == change_lead_time]
+            if not price_at_change_row.empty:
+                fixed_price = price_at_change_row[price_col].iloc[0]
+                st.warning(f"売上予測: 変更前の価格が見つからず、変更時点(LT={change_lead_time})の価格 {fixed_price:.1f} を固定価格として使用します。", icon="⚠️")
+            # Final fallback: use price at max lead time if still NaN
+            elif not df_merged.empty:
+                 fixed_price = df_merged[price_col].iloc[0]
+                 st.warning(f"売上予測: 変更前/変更時の価格が見つからず、最大リードタイムの価格 {fixed_price:.1f} を固定価格として使用します。", icon="⚠️")
+            else:
+                 st.error("売上予測: 固定価格を決定できませんでした。")
+                 return pd.DataFrame(), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+        # Ensure fixed_price is a valid float, default to 0 if not
+        if pd.isna(fixed_price):
+            st.error(f"売上予測: 有効な固定価格を特定できませんでした (NaN)。予測売上は0になります。")
+            fixed_price = 0.0
+        else:
+            fixed_price = float(fixed_price) # Ensure it's float
+
+        st.info(f"予測売上計算に使用する固定価格: {fixed_price:.1f}") # Log the fixed price used
+        # --- Fixed Price Determination End --- 
+
+        # --- 日次新規予約数と日次売上の計算 (降順ループ) ---
+        results = []
+        prev_actual_usage = 0
+        prev_pred_usage = 0
+        total_actual_revenue_before_change = 0
+        total_actual_revenue_after_change = 0
+        total_predicted_revenue_after_change = 0
+        for index, row in df_merged.iterrows():
+            current_lt = row[lead_time_col]
+            current_actual_usage = row[actual_usage_col]
+            current_pred_usage = row[pred_usage_col]
+            current_actual_price = row[price_col]
+
+            # clip(lower=0) で利用台数減によるマイナス予約数を防ぐ
+            actual_new = (current_actual_usage - prev_actual_usage)
+            pred_new = (current_pred_usage - prev_pred_usage)
+
+            actual_daily_revenue = actual_new * current_actual_price if actual_new > 0 else 0
+
+            predicted_daily_revenue = 0
+            if current_lt > change_lead_time: # Before price change
+                predicted_daily_revenue = actual_daily_revenue
+                total_actual_revenue_before_change += actual_daily_revenue
+            elif current_lt <= change_lead_time: # At or after price change
+                daily_pred_rev_after = pred_new * fixed_price if pred_new > 0 else 0
+                predicted_daily_revenue = daily_pred_rev_after
+                total_predicted_revenue_after_change += daily_pred_rev_after
+                total_actual_revenue_after_change += actual_daily_revenue
+
+            results.append({
+                lead_time_col: current_lt,
+                'actual_new_bookings': actual_new if actual_new > 0 else 0,
+                'pred_new_bookings': pred_new if pred_new > 0 else 0,
+                'actual_price': current_actual_price,
+                'fixed_price': fixed_price, # Price used for prediction after change
+                'actual_revenue': actual_daily_revenue,
+                'predicted_revenue_calc': predicted_daily_revenue # Store the hybrid calculation
+            })
+            prev_actual_usage = current_actual_usage
+            prev_pred_usage = current_pred_usage
+
+        revenue_df = pd.DataFrame(results)
+        # 必要に応じて change_lead_time 以前にフィルタリング (ただし全期間計算しても合計は同じはず)
+        # revenue_df = revenue_df[revenue_df[lead_time_col] <= change_lead_time]
+
+        # 累計と差額の計算
+        revenue_df = revenue_df.sort_values(by=lead_time_col, ascending=True) # 累計計算のため昇順に戻す
+        revenue_df['actual_revenue_cumsum'] = revenue_df['actual_revenue'].cumsum()
+        # Rename the calculation column for clarity in the detailed df output
+        revenue_df = revenue_df.rename(columns={'predicted_revenue_calc': 'predicted_revenue'})
+        revenue_df['predicted_revenue_cumsum'] = revenue_df['predicted_revenue'].cumsum() # Cumsum of the hybrid value
+        revenue_df['revenue_difference'] = revenue_df['actual_revenue'] - revenue_df['predicted_revenue']
+        revenue_df['revenue_difference_cumsum'] = revenue_df['revenue_difference'].cumsum()
+        revenue_df = revenue_df.sort_values(by=lead_time_col, ascending=False) # 表示用に降順に戻す
+
+        # 合計値
+        total_actual = total_actual_revenue_before_change + total_actual_revenue_after_change
+
+        # ★★★ Apply logic: If actual sales increase after change is negligible, difference is 0 ★★★
+        tolerance = 1e-9 # Define a small tolerance for floating point comparisons
+        if total_actual_revenue_after_change <= tolerance: # Check against tolerance
+             st.info(f"価格変更後 (LT <= {change_lead_time}) の実績売上増がほぼゼロのため、売上差額は0として扱います (実績売上後: {total_actual_revenue_after_change:.4f})", icon="ℹ️") # Log the value
+             total_predicted_hybrid = total_actual # Predicted = Actual if no actual increase after change
+             total_difference = 0
+             total_predicted_revenue_after_change = 0 # Set predicted after to 0 as well
+        else:
+             # Original hybrid calculation if actual sales *did* increase after change
+             total_predicted_hybrid = total_actual_revenue_before_change + total_predicted_revenue_after_change
+             total_difference = total_actual - total_predicted_hybrid
+
+        # ★★★ Return new values (rounded) ★★★
+        return (revenue_df,
+                round(total_actual, 0),
+                round(total_predicted_hybrid, 0),
+                round(total_difference, 0),
+                round(total_actual_revenue_before_change, 0),
+                round(total_actual_revenue_after_change, 0),
+                round(total_predicted_revenue_after_change, 0))
+
     except Exception as e:
         st.error(f"売上計算中にエラーが発生しました: {e}")
         import traceback
         st.error(traceback.format_exc())
-        empty_df = pd.DataFrame()
-        return empty_df, 0.0, 0.0, 0.0
+        return pd.DataFrame(), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
 
 def plot_revenue_comparison(revenue_df: pd.DataFrame, lead_time_col: str, title: str = "売上金額比較") -> go.Figure:

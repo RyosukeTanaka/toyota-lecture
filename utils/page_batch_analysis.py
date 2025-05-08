@@ -7,6 +7,7 @@ import os
 from typing import Dict, Any, List, Optional, Tuple
 import concurrent.futures
 import plotly.io as pio
+import numpy as np
 
 from .constants import (
     TARGET_VARIABLE, DATE_COLUMN, PRICE_COLUMNS, LEAD_TIME_COLUMN,
@@ -50,7 +51,16 @@ def save_batch_results_to_folder(
     
     try:
         if result_df is not None and not result_df.empty:
-            result_df.to_csv(os.path.join(results_dir, "batch_analysis_results.csv"), index=False, encoding='utf-8-sig')
+            expected_cols = ["利用日", "車両クラス", "使用モデル", "価格変更リードタイム",
+                             "利用台数累積実績（価格変更時）",
+                             "利用台数累積実績",
+                             "利用台数累積（予測）",
+                             "追加実績予約数（価格変更後）",
+                             "追加予測予約数（価格変更後）",
+                             "変更前価格", "変更後価格", "実績売上",
+                             "予測売上（価格変更影響なし時は実績値）", "売上差額"]
+            cols_to_save = [col for col in expected_cols if col in result_df.columns]
+            result_df[cols_to_save].to_csv(os.path.join(results_dir, "batch_analysis_results.csv"), index=False, float_format='%.1f')
         if date_revenue_df is not None and not date_revenue_df.empty:
             date_revenue_df.to_csv(os.path.join(results_dir, "date_revenue_summary.csv"), index=False, encoding='utf-8-sig')
         if class_revenue_df is not None and not class_revenue_df.empty:
@@ -102,7 +112,7 @@ def save_batch_results_to_folder(
                 f.write(f"成功: {success_count}件, 失敗: {fail_count}件\n\n")
                 f.write(f"売上集計結果:\n")
                 f.write(f"実績総売上: {int(total_actual):,}円\n")
-                f.write(f"予測総売上（価格固定）: {int(total_predicted):,}円\n")
+                f.write(f"予測売上（価格変更影響なし時は実績値）: {int(total_predicted):,}円\n")
                 f.write(f"売上差額（実績-予測）: {int(total_difference):,}円\n\n")
                 if total_difference > 0:
                     f.write(f"全体分析: 期間全体で価格変更により {int(total_difference):,}円 の追加売上が発生したと推定されます。価格戦略は有効に機能しています。\n")
@@ -163,53 +173,97 @@ def display_batch_results_in_page(metadata_list: Optional[List[Dict[str, Any]]],
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("実績総売上", f"{int(total_actual):,}円")
+        st.metric("実績売上", f"{int(total_actual):,}円")
     with col2:
-        st.metric("予測総売上（価格固定）", f"{int(total_predicted):,}円")
+        st.metric("予測売上（価格変更影響なし時は実績値）", f"{int(total_predicted):,}円")
     with col3:
         delta_color = "normal" if total_difference >= 0 else "inverse"
         st.metric("売上差額（実績-予測）", f"{int(total_difference):,}円", 
                 delta=f"{int(total_difference):,}円", delta_color=delta_color)
     
-    result_df_display = pd.DataFrame([
-        {
-            "利用日": meta.get("date"),
-            "車両クラス": meta.get("car_class"),
-            "使用モデル": meta.get("model_name", "不明"),
-            "価格変更リードタイム": meta.get("last_change_lt"),
-            "実績売上": int(meta.get("revenue_actual", 0)),
-            "予測売上": int(meta.get("revenue_predicted", 0)),
-            "売上差額": int(meta.get("revenue_difference", 0))
-        }
-        for meta in success_data
-    ])
+    result_data_for_df = []
+    for meta in success_data:
+        result_entry = {
+             "利用日": meta.get("date"),
+             "車両クラス": meta.get("car_class"),
+             "使用モデル": meta.get("model_name", "不明"),
+             "価格変更リードタイム": meta.get("last_change_lt"),
+             "利用台数累積実績": meta.get("actual_cumulative_usage_end", np.nan),
+             "利用台数累積（予測）": meta.get("predicted_cumulative_usage_end", np.nan),
+             "利用台数累積実績（価格変更時）": meta.get("actual_usage_at_change_lt", np.nan),
+             "追加実績予約数（価格変更後）": meta.get("additional_actual_bookings", np.nan),
+             "追加予測予約数（価格変更後）": meta.get("additional_predicted_bookings", np.nan),
+             "変更前価格": meta.get("price_before_change", np.nan),
+             "変更後価格": meta.get("price_after_change", np.nan),
+             "実績売上": meta.get("revenue_actual", 0),
+             "予測売上（価格変更影響なし時は実績値）": meta.get("revenue_predicted", 0),
+             "売上差額": meta.get("revenue_difference", 0)
+         }
+        result_data_for_df.append(result_entry)
+
+    result_df_display = pd.DataFrame(result_data_for_df)
+    result_df_numeric = result_df_display.copy()
     
     st.subheader("詳細結果")
-    st.dataframe(result_df_display.sort_values(by=["利用日", "車両クラス"]))
-    
+    display_columns_order = [
+        "利用日", "車両クラス", "使用モデル", "価格変更リードタイム",
+        "利用台数累積実績（価格変更時）",
+        "利用台数累積実績",
+        "利用台数累積（予測）",
+        "追加実績予約数（価格変更後）",
+        "追加予測予約数（価格変更後）",
+        "変更前価格", "変更後価格", "実績売上",
+        "予測売上（価格変更影響なし時は実績値）", "売上差額"
+    ]
+    cols_to_display = [col for col in result_df_numeric.columns if col in display_columns_order]
+
     st.subheader("日付別売上差額")
-    date_revenue_df_display = result_df_display.groupby("利用日").agg({
-        "実績売上": "sum", "予測売上": "sum", "売上差額": "sum"
+    date_revenue_df_display = result_df_numeric.groupby("利用日").agg({
+        "実績売上": "sum", "予測売上（価格変更影響なし時は実績値）": "sum", "売上差額": "sum"
     }).reset_index()
+    fig_date_display = None
     if not date_revenue_df_display.empty:
-        fig_date_display = plot_batch_revenue_comparison(date_revenue_df_display, "利用日")
-        st.plotly_chart(fig_date_display, use_container_width=True)
+        df_for_plot_date = date_revenue_df_display.rename(columns={"予測売上（価格変更影響なし時は実績値）": "予測売上"})
+        fig_date_display = plot_batch_revenue_comparison(df_for_plot_date, "利用日")
+        st.plotly_chart(fig_date_display, use_container_width=True, key="date_revenue_chart")
     else:
         st.info("日付別売上データがありません。")
     
     st.subheader("車両クラス別売上差額")
-    class_revenue_df_display = result_df_display.groupby("車両クラス").agg({
-        "実績売上": "sum", "予測売上": "sum", "売上差額": "sum"
+    class_revenue_df_display = result_df_numeric.groupby("車両クラス").agg({
+        "実績売上": "sum", "予測売上（価格変更影響なし時は実績値）": "sum", "売上差額": "sum"
     }).reset_index()
+    fig_class_display = None
     if not class_revenue_df_display.empty:
-        fig_class_display = plot_batch_revenue_comparison(class_revenue_df_display, "車両クラス", horizontal=True)
-        st.plotly_chart(fig_class_display, use_container_width=True)
+        df_for_plot_class = class_revenue_df_display.rename(columns={"予測売上（価格変更影響なし時は実績値）": "予測売上"})
+        fig_class_display = plot_batch_revenue_comparison(df_for_plot_class, "車両クラス", horizontal=True)
+        st.plotly_chart(fig_class_display, use_container_width=True, key="class_revenue_chart")
     else:
         st.info("車両クラス別売上データがありません。")
         
-    csv_download = result_df_display.to_csv(index=False).encode('utf-8')
+    st.subheader("詳細結果テーブル")
+
+    column_config_dict = {
+        "利用台数累積実績": st.column_config.NumberColumn(format="%.1f"),
+        "利用台数累積（予測）": st.column_config.NumberColumn(format="%.1f"),
+        "利用台数累積実績（価格変更時）": st.column_config.NumberColumn(format="%.1f"),
+        "追加実績予約数（価格変更後）": st.column_config.NumberColumn(format="%.1f"),
+        "追加予測予約数（価格変更後）": st.column_config.NumberColumn(format="%.1f"),
+        "変更前価格": st.column_config.NumberColumn(format="%.1f"),
+        "変更後価格": st.column_config.NumberColumn(format="%.1f"),
+    }
+    st.dataframe(
+        result_df_numeric[cols_to_display].sort_values(by=["利用日", "車両クラス"]),
+        column_config=column_config_dict,
+    )
+
+    # --- ダウンロードボタン (CSV出力時にフォーマット指定) ---
+    csv_download = result_df_numeric.to_csv(
+        index=False,
+        float_format='%.1f' # Format all floats to 1 decimal place for CSV
+    ).encode('utf-8')
     download_filename = f"batch_analysis_results_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-    st.download_button("💾 集計結果をダウンロード", csv_download, download_filename, "text/csv", key="download_batch_csv_page")
+    st.download_button("💾 集計結果をダウンロード (数値)", csv_download, download_filename, "text/csv", key="download_batch_csv_page")
     
     if total_difference > 0:
         st.success(f"**全体分析**: 期間全体で価格変更により **{int(total_difference):,}円** の追加売上が発生したと推定されます。価格戦略は有効に機能しています。")
@@ -228,7 +282,7 @@ def display_batch_results_in_page(metadata_list: Optional[List[Dict[str, Any]]],
         st.dataframe(error_df_page)
     
     if return_figures:
-        return result_df_display, fig_date_display, fig_class_display, date_revenue_df_display, class_revenue_df_display
+        return result_df_numeric, fig_date_display, fig_class_display, date_revenue_df_display, class_revenue_df_display
     return None
 
 def render_batch_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
