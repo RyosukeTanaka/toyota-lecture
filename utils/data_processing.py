@@ -4,6 +4,7 @@ import streamlit as st
 import os
 import numpy as np # numpyをインポート
 from typing import Optional, List, Dict, Tuple, Union # Dict, Tuple, Union を追加
+from .constants import PRICE_COLUMNS # 定数を直接参照
 
 @st.cache_data # Streamlitのキャッシュ機能を利用
 def load_data(uploaded_file):
@@ -108,29 +109,36 @@ def preprocess_data(df):
 
     # --- 価格差特徴量の計算 ---
     # '価格_トヨタ', '価格_オリックス' 列が存在し、数値型であることを確認
-    price_cols = ['価格_トヨタ', '価格_オリックス']
-    if all(col in df_processed.columns for col in price_cols):
+    # price_cols = ['価格_トヨタ', '価格_オリックス'] # constantsから読み込むように変更
+
+    if len(PRICE_COLUMNS) >= 2 and all(col in df_processed.columns for col in PRICE_COLUMNS[:2]): # 先頭2列で計算
         # 数値型に変換試行 (変換できない値はNaNになる)
-        for col in price_cols:
+        for col in PRICE_COLUMNS[:2]:
             df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
 
         # NaNが発生した場合の警告
-        if df_processed[price_cols].isnull().any().any():
-             st.warning(f"警告: '{', '.join(price_cols)}' 列に数値変換できない値、または欠損値が含まれています。価格差計算に影響する可能性があります。")
-
-        # 価格差 (NaNを無視しないように計算)
-        # df_processed['価格差'] = df_processed['価格_トヨタ'] - df_processed['価格_オリックス']
-        # 価格比 (ゼロ除算を避ける, NaNを伝播)
-        # df_processed['価格比'] = df_processed['価格_トヨタ'] / df_processed['価格_オリックス'].replace(0, pd.NA)
+        if df_processed[PRICE_COLUMNS[:2]].isnull().any().any():
+             st.warning(f"警告: '{PRICE_COLUMNS[0]}', '{PRICE_COLUMNS[1]}' 列に数値変換できない値、または欠損値が含まれています。価格差計算に影響する可能性があります。")
 
         # より頑健な計算（欠損値があっても計算できるように）
-        df_processed['価格差'] = df_processed[price_cols[0]].sub(df_processed[price_cols[1]], fill_value=None) # fill_value=Noneで片方NaNなら結果もNaN
+        df_processed['価格差'] = df_processed[PRICE_COLUMNS[0]].sub(df_processed[PRICE_COLUMNS[1]], fill_value=None) # fill_value=Noneで片方NaNなら結果もNaN
         # 価格比（オリックスが0またはNaNの場合はNaNにする）
-        denominator = df_processed[price_cols[1]].replace(0, pd.NA)
-        df_processed['価格比'] = df_processed[price_cols[0]].div(denominator, fill_value=None)
+        denominator = df_processed[PRICE_COLUMNS[1]].replace(0, pd.NA)
+        df_processed['価格比'] = df_processed[PRICE_COLUMNS[0]].div(denominator, fill_value=None)
 
+    elif len(PRICE_COLUMNS) == 1 and PRICE_COLUMNS[0] in df_processed.columns:
+        st.info(f"価格関連特徴量: '{PRICE_COLUMNS[0]}' のみがPRICE_COLUMNSに設定されているため、価格差・価格比は計算されません。")
+        # 必要であれば、価格差と価格比の列をNaNで作成
+        if '価格差' not in df_processed.columns:
+            df_processed['価格差'] = pd.NA
+        if '価格比' not in df_processed.columns:
+            df_processed['価格比'] = pd.NA
     else:
-        st.warning(f"警告: 価格差計算に必要な列 ('{price_cols[0]}', '{price_cols[1]}') のいずれか、または両方がデータに含まれていません。")
+        st.warning(f"警告: 価格差計算に必要な列 ({ ', '.join(PRICE_COLUMNS) if PRICE_COLUMNS else 'なし'}) がデータに含まれていないか、PRICE_COLUMNSの設定が不十分です。価格差・価格比は計算されません。")
+        if '価格差' not in df_processed.columns:
+            df_processed['価格差'] = pd.NA
+        if '価格比' not in df_processed.columns:
+            df_processed['価格比'] = pd.NA
 
     # --- 価格比計算の後に追加 ---
     st.success("データの前処理（日付変換、リードタイム再計算、価格差計算）が完了しました。ラグ特徴量計算は別途実行されます。")

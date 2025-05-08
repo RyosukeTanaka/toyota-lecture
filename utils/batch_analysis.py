@@ -316,6 +316,8 @@ def batch_predict_date(
                                 transformed_data[col].fillna(0, inplace=True)
                     
                     y_pred = model.predict(transformed_data)
+                    if y_pred is not None: # ★★★ 追加: y_predがNoneでないことを確認 ★★★
+                        y_pred = np.round(y_pred) # ★★★ 追加: 予測値を四捨五入 ★★★
                 else:
                     # st.warning(f"{date} {car_class}のモデルメタデータがないため、直接予測を試みます。")
                     numeric_cols = X.select_dtypes(include=['number', 'bool']).columns
@@ -324,6 +326,8 @@ def batch_predict_date(
                     if nan_cols_direct:
                         X_numeric.fillna(0, inplace=True)
                     y_pred = model.predict(X_numeric)
+                    if y_pred is not None: # ★★★ 追加: y_predがNoneでないことを確認 ★★★
+                        y_pred = np.round(y_pred) # ★★★ 追加: 予測値を四捨五入 ★★★
             except Exception as e1:
                 try:
                     if hasattr(model, 'predict'):
@@ -352,22 +356,25 @@ def batch_predict_date(
                                 if X_selected_fallback.isna().any().any():
                                     X_selected_fallback.fillna(0, inplace=True)
                                 y_pred = model.predict(X_selected_fallback)
+                                if y_pred is not None: y_pred = np.round(y_pred) # ★★★ 四捨五入 ★★★
                             else:
                                 numeric_cols_fallback_else = X.select_dtypes(include=['number', 'bool']).columns
                                 X_numeric_fallback_else = X[numeric_cols_fallback_else].copy()
                                 X_numeric_fallback_else.fillna(0, inplace=True) # 欠損値処理
                                 y_pred = model.predict(X_numeric_fallback_else)
+                                if y_pred is not None: y_pred = np.round(y_pred) # ★★★ 四捨五入 ★★★
                         else:
                             numeric_cols_fallback_no_feat = X.select_dtypes(include=['number', 'bool']).columns
                             X_numeric_fallback_no_feat = X[numeric_cols_fallback_no_feat].copy()
                             X_numeric_fallback_no_feat.fillna(0, inplace=True) # 欠損値処理
                             y_pred = model.predict(X_numeric_fallback_no_feat)
+                            if y_pred is not None: y_pred = np.round(y_pred) # ★★★ 四捨五入 ★★★
                 except Exception as e2:
                     result_meta["error"] = f"予測失敗(e1:{str(e1)}, e2:{str(e2)})"
                     return pd.DataFrame(), result_meta
-                    
-            if y_pred is None:
-                result_meta["error"] = "予測結果がNoneです"
+            
+            if y_pred is None: # ★★★ y_predがNoneのままならエラー ★★★
+                result_meta["error"] = "予測結果の生成に失敗しました (y_pred is None)"
                 return pd.DataFrame(), result_meta
                 
             predictions_result = data_scenario.copy()

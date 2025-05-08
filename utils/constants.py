@@ -3,7 +3,7 @@
 # --- 定数 ---
 TARGET_VARIABLE = '利用台数累積'
 DATE_COLUMN = '利用日'
-PRICE_COLUMNS = ['価格_トヨタ', '価格_オリックス']
+PRICE_COLUMNS = ['価格_トヨタ']
 LEAD_TIME_COLUMN = 'リードタイム_計算済'
 CAR_CLASS_COLUMN = '車両クラス'
 BOOKING_DATE_COLUMN = '予約日'
