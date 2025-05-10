@@ -440,10 +440,10 @@ def create_scenario_data(df_filtered, price_cols, lead_time_col, scenario_type='
 
 
     # --- 価格差特徴量の再計算 (共通処理) ---
-    if all(col in df_scenario.columns for col in price_cols):
+    if len(price_cols) >= 2 and all(col in df_scenario.columns for col in price_cols[:2]): # 先頭2列で計算
         # 再計算前に数値型であることを確認
         all_numeric = True
-        for col in price_cols:
+        for col in price_cols[:2]: # Check only the first two
             try:
                 df_scenario[col] = pd.to_numeric(df_scenario[col], errors='raise') # エラーがあればここで停止
             except Exception as e:
@@ -453,8 +453,8 @@ def create_scenario_data(df_filtered, price_cols, lead_time_col, scenario_type='
 
         if all_numeric:
             # NaNチェック (数値変換後なので isna() でOK)
-            if df_scenario[price_cols].isna().any().any():
-                 st.warning(f"警告: シナリオデータの価格列 '{', '.join(price_cols)}' にNaNが含まれています。価格差/比の計算結果もNaNになる可能性があります。")
+            if df_scenario[price_cols[:2]].isna().any().any():
+                 st.warning(f"警告: シナリオデータの価格列 '{', '.join(price_cols[:2])}' にNaNが含まれています。価格差/比の計算結果もNaNになる可能性があります。")
 
             try:
                 df_scenario['価格差'] = df_scenario[price_cols[0]].sub(df_scenario[price_cols[1]], fill_value=np.nan) # fill_value=np.nan推奨
@@ -466,9 +466,21 @@ def create_scenario_data(df_filtered, price_cols, lead_time_col, scenario_type='
                 # 必要に応じて '価格差', '価格比' 列を削除またはNaNで埋める
                 if '価格差' in df_scenario.columns: df_scenario['価格差'] = np.nan
                 if '価格比' in df_scenario.columns: df_scenario['価格比'] = np.nan
-
-    # else:
-        # 価格列が揃っていない場合は警告済みのはず
+    elif len(price_cols) == 1 and price_cols[0] in df_scenario.columns:
+        st.info(f"シナリオデータの価格差/比再計算: '{price_cols[0]}' のみがPRICE_COLUMNSに設定されているため、価格差・価格比は再計算されず、既存の値（またはNaN）が維持されます。")
+        # 既存の値を維持するか、NaNで埋めるかを選択。ここでは何もしない（元の値が維持される）
+        # 念のため、列が存在しない場合はNaNで作成
+        if '価格差' not in df_scenario.columns:
+            df_scenario['価格差'] = pd.NA
+        if '価格比' not in df_scenario.columns:
+            df_scenario['価格比'] = pd.NA
+    else:
+        st.warning(f"シナリオデータの価格差/比再計算: 必要な価格列が不足しているか、PRICE_COLUMNSが空です。価格差・価格比は計算/更新されません。")
+        # 念のため、列が存在しない場合はNaNで作成
+        if '価格差' not in df_scenario.columns:
+            df_scenario['価格差'] = pd.NA
+        if '価格比' not in df_scenario.columns:
+            df_scenario['価格比'] = pd.NA
 
     st.success(f"シナリオデータ ({scenario_type}) 作成完了。")
     return df_scenario 

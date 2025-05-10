@@ -411,7 +411,9 @@ def render_prediction_analysis_page(data: pd.DataFrame, config: Dict[str, Any]):
                                         
                                         # 売上差額の計算
                                         st.info("価格変更がもたらした売上への影響を分析しています...")
-                                        revenue_df, total_actual, total_predicted, total_difference = calculate_revenue_difference(
+                                        (revenue_df, total_actual, total_predicted, total_difference,
+                                         actual_before, actual_after, predicted_after
+                                        ) = calculate_revenue_difference(
                                             df_actual=data_filtered_sorted,
                                             df_predicted=predictions_result,
                                             lead_time_col=LEAD_TIME_COLUMN,
